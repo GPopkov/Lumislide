@@ -1,0 +1,54 @@
+# XcodeGen configuration (optional).
+#
+# Для генерации Xcode-проекта:
+#   1) brew install xcodegen
+#   2) xcodegen generate
+#   3) open Lumislide.xcodeproj
+#
+# Проект содержит полноценный app target (с Info.plist и entitlements),
+# подходящий для релиза в Mac App Store и прямого распространения.
+name: Lumislide
+options:
+  bundleIdPrefix: com.lumislide
+  deploymentTarget:
+    macOS: "15.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.10"
+    MACOSX_DEPLOYMENT_TARGET: "15.0"
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: ""
+    ENABLE_HARDENED_RUNTIME: true
+    ONLY_ACTIVE_ARCH: true
+
+targets:
+  Lumislide:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/SlideStoryApp
+      - path: Sources/SlideStoryModel
+      - path: Sources/SlideStoryRenderer
+    resources:
+      - path: Sources/SlideStoryRenderer/Resources
+    info:
+      path: Supporting/Info.plist
+    entitlements:
+      path: Supporting/Entitlements/Direct.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.files.user-selected.read-only: true
+        com.apple.security.files.user-selected.read-write: true
+        com.apple.security.assets.pictures.read-only: true
+        com.apple.security.assets.movies.read-only: true
+        com.apple.security.assets.music.read-only: true
+
+schemes:
+  Lumislide:
+    build:
+      targets:
+        Lumislide: all
+    run:
+      config: Debug

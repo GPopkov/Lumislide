@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Sandbox (обязателен для Mac App Store) -->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+
+	<!-- Доступ только на чтение к выбранным пользователем файлам
+	     через security-scoped bookmarks (медиа-файлы и музыка). -->
+	<key>com.apple.security.files.user-selected.read-only</key>
+	<true/>
+
+	<!-- Чтение и запись в папку проектов, выбранную пользователем. -->
+	<key>com.apple.security.files.user-selected.read-write</key>
+	<true/>
+
+	<!-- Медиафайлы: чтение изображений и видео (для рендера/экспорта). -->
+	<key>com.apple.security.assets.pictures.read-only</key>
+	<true/>
+	<key>com.apple.security.assets.movies.read-only</key>
+	<true/>
+	<key>com.apple.security.assets.music.read-only</key>
+	<true/>
+
+	<!-- Сетевой доступ не требуется (все операции on-device).
+	     Закомментировано намеренно; раскомментируйте, если появится
+	     встроенная музыкальная библиотека с потоковой загрузкой. -->
+	<!--
+	<key>com.apple.security.network.client</key>
+	<true/>
+	-->
+
+	<!-- Запись в Downloads/Desktop не нужна — экспорт сохраняется
+	     через NSSavePanel (sandbox автоматически даёт доступ к месту
+	     сохранения). -->
+</dict>
+</plist>

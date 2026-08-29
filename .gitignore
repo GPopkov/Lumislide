@@ -1,0 +1,18 @@
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Релизные бандлы и артефакты
+dist/
+
+# Xcode
+*.xcodeproj/xcuserdata/
+*.xcuserdatad/
+DerivedData/
+
+# macOS
+.DS_Store
+
+# Временные файлы
+*.tmp
+*.tmp-*
