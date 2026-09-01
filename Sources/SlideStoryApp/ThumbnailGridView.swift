@@ -15,6 +15,7 @@ struct ThumbnailGridView: NSViewRepresentable {
     var thumbnailSize: Double = 180
 
     @EnvironmentObject private var store: ProjectsStore
+    @EnvironmentObject private var settings: AppSettings
 
     /// Размер ячейки для заданной ширины карточки (базовое 180×150).
     static func itemSize(for thumbnailSize: Double) -> NSSize {

@@ -3,6 +3,7 @@ import SwiftUI
 /// Левая колонка главного окна: список проектов.
 struct ProjectListView: View {
     @EnvironmentObject private var store: ProjectsStore
+    @EnvironmentObject private var settings: AppSettings
     @State private var selectedURL: URL?
 
     var body: some View {

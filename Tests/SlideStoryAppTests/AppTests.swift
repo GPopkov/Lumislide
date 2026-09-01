@@ -54,10 +54,15 @@ final class AppTests: XCTestCase {
         defaults.set("ru", forKey: "app.language")
         XCTAssertEqual(L10n.currentLanguage, .russian)
         XCTAssertEqual(L10n.text(.export), "Экспорт")
+        // Левая панель главного окна.
+        XCTAssertEqual(L10n.text(.projects), "Проекты")
+        XCTAssertEqual(L10n.text(.create), "Создать")
 
         defaults.set("en", forKey: "app.language")
         XCTAssertEqual(L10n.currentLanguage, .english)
         XCTAssertEqual(L10n.text(.export), "Export")
+        XCTAssertEqual(L10n.text(.projects), "Projects")
+        XCTAssertEqual(L10n.text(.create), "Create")
 
         // Восстанавливаем разумное значение по умолчанию.
         defaults.removeObject(forKey: "app.language")
