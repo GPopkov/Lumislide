@@ -72,7 +72,8 @@ public enum MediaResolver {
     /// Экспортирует оригинальный ресурс ассета во временный файл
     /// (с кэшированием по localIdentifier).
     private static func exportPhotosAsset(localIdentifier: String) throws -> URL {
-        guard PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized else {
+        let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        guard status == .authorized || status == .limited else {
             throw MediaResolverError.photosAccessDenied
         }
 

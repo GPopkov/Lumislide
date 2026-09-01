@@ -19,7 +19,7 @@ public enum L10n {
         // Сетка / карточки
         case automaticRandom, forceTransition, addTitle, disableKenBurns,
              relinkFile, hasTitle, transitionLabel, fileNotAvailable, video,
-             thumbnailSize, fromPhotos
+             thumbnailSize, fromPhotos, photosAccessDenied, photosAccessDeniedMessage
 
         // Свойства проекта
         case projectProperties, name, photoDuration, transitionDuration,
@@ -70,6 +70,8 @@ public enum L10n {
             .video: "video",
             .thumbnailSize: "Thumbnail Size",
             .fromPhotos: "From Photos Library",
+            .photosAccessDenied: "Photos Library Access Required",
+            .photosAccessDeniedMessage: "Allow access in System Settings → Privacy & Security → Photos, then try again.",
 
             .projectProperties: "Project Properties",
             .name: "Name",
@@ -144,6 +146,8 @@ public enum L10n {
             .video: "видео",
             .thumbnailSize: "Размер миниатюр",
             .fromPhotos: "Из медиатеки Фото",
+            .photosAccessDenied: "Нужен доступ к медиатеке Фото",
+            .photosAccessDeniedMessage: "Разрешите доступ в Системных настройках → Конфиденциальность и безопасность → Фото и попробуйте снова.",
 
             .projectProperties: "Свойства проекта",
             .name: "Название",

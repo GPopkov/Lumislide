@@ -36,6 +36,8 @@ public final class ProjectsStore: ObservableObject {
     @Published public var currentProjectURL: URL?
     /// Сохранён ли текущий проект (для маркера «изменено»).
     @Published public var isDirty = false
+    /// Последняя ошибка доступа к медиа (например, запрет доступа к Фото).
+    @Published public var mediaAccessError: String?
 
     private let settings: AppSettings
     private var lastSavedName = ""
@@ -225,24 +227,68 @@ public final class ProjectsStore: ObservableObject {
     /// Добавляет выбранные элементы медиатеки Фото в конец проекта.
     /// Хранятся ссылки на PHAsset (`photosLocalIdentifier`), контент
     /// экспортируется во временный файл при предпросмотре/экспорте.
+    ///
+    /// ВАЖНО: системный пикер (PhotosPicker) сам по себе НЕ выдаёт приложению
+    /// доступ к библиотеке Фото — запрашиваем авторизацию здесь, иначе
+    /// `PHAsset.fetchAssets` вернёт пусто и слайды не добавятся.
     /// - Parameter items: выбранные элементы `PhotosPicker`.
     public func addPhotos(_ items: [PhotosPickerItem]) {
         guard currentProject != nil, !items.isEmpty else { return }
-        let identifiers = items.compactMap { $0.itemIdentifier }
-        guard !identifiers.isEmpty else { return }
+        mediaAccessError = nil
 
-        // Определяем тип и имя по ассету.
+        switch PHPhotoLibrary.authorizationStatus(for: .readWrite) {
+        case .authorized, .limited:
+            addPhotosItems(items)
+        case .notDetermined:
+            PHPhotoLibrary.requestAuthorization(for: .readWrite) { newStatus in
+                Task { @MainActor in
+                    switch newStatus {
+                    case .authorized, .limited:
+                        self.addPhotosItems(items)
+                    default:
+                        self.mediaAccessError = L10n.text(.photosAccessDenied)
+                    }
+                }
+            }
+        default:
+            mediaAccessError = L10n.text(.photosAccessDenied)
+        }
+    }
+
+    private func addPhotosItems(_ items: [PhotosPickerItem]) {
+        let identifiers = items.compactMap { $0.itemIdentifier }
+        guard !identifiers.isEmpty else {
+            mediaAccessError = L10n.text(.photosAccessDenied)
+            return
+        }
+
+        // Тип и имя берём из ассета; если ассет не резолвится (редкий случай) —
+        // определяем тип по содержимому элемента и используем identifier как имя.
         let assets = PHAsset.fetchAssets(withLocalIdentifiers: identifiers, options: nil)
-        var references: [MediaReference] = []
+        var assetsByID: [String: PHAsset] = [:]
         assets.enumerateObjects { asset, _, _ in
-            let kind: MediaKind = asset.mediaType == .video ? .video : .photo
-            let name = PHAssetResource.assetResources(for: asset).first?.originalFilename
-                ?? asset.localIdentifier
+            assetsByID[asset.localIdentifier] = asset
+        }
+
+        var references: [MediaReference] = []
+        for item in items {
+            guard let id = item.itemIdentifier else { continue }
+            let asset = assetsByID[id]
+            let kind: MediaKind
+            let name: String
+            if let asset {
+                kind = asset.mediaType == .video ? .video : .photo
+                name = PHAssetResource.assetResources(for: asset).first?.originalFilename ?? id
+            } else {
+                let isVideo = item.supportedContentTypes.contains { $0.conforms(to: .movie) }
+                kind = isVideo ? .video : .photo
+                name = id
+            }
             references.append(MediaReference(
                 kind: kind,
                 bookmarkData: "",
                 displayName: name,
-                photosLocalIdentifier: asset.localIdentifier
+                photosLocalIdentifier: id
             ))
         }
         guard !references.isEmpty else { return }

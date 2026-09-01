@@ -91,6 +91,17 @@ struct MainWindowView: View {
                 try? store.saveCurrentProject()
             }
         }
+        .alert(
+            L10n.text(.photosAccessDenied),
+            isPresented: Binding(
+                get: { store.mediaAccessError != nil },
+                set: { if !$0 { store.mediaAccessError = nil } }
+            )
+        ) {
+            Button("OK") { store.mediaAccessError = nil }
+        } message: {
+            Text(store.mediaAccessError ?? L10n.text(.photosAccessDeniedMessage))
+        }
     }
 
     private var emptyState: some View {
