@@ -1,4 +1,9 @@
 import SwiftUI
+#if canImport(_PhotosUI_SwiftUI)
+import _PhotosUI_SwiftUI
+#else
+import PhotosUI
+#endif
 import SlideStoryModel
 
 /// Главное окно редактора:
@@ -8,6 +13,9 @@ struct MainWindowView: View {
     @EnvironmentObject private var store: ProjectsStore
     @EnvironmentObject private var settings: AppSettings
 
+    /// Выбранные элементы медиатеки Фото (для кнопки «Из медиатеки Фото»).
+    @State private var photosItems: [PhotosPickerItem] = []
+
     var body: some View {
         HSplitView {
             // Левая колонка: список проектов.
@@ -16,7 +24,7 @@ struct MainWindowView: View {
 
             // Правая область: сетка миниатюр.
             if let project = store.currentProject {
-                ThumbnailGridView(project: project)
+                ThumbnailGridView(project: project, thumbnailSize: settings.thumbnailSize)
                     .frame(minWidth: 600)
             } else {
                 emptyState
@@ -28,22 +36,53 @@ struct MainWindowView: View {
                 Button(action: { store.addMedia() }) {
                     Label(L10n.text(.addMedia), systemImage: "plus")
                 }
+                .labelStyle(.titleAndIcon)
                 .disabled(store.currentProject == nil)
+
+                // Выбор из медиатеки Фото.
+                PhotosPicker(
+                    selection: $photosItems,
+                    maxSelectionCount: 100,
+                    matching: .any(of: [.images, .videos])
+                ) {
+                    Label(L10n.text(.fromPhotos), systemImage: "photo.on.rectangle.angled")
+                }
+                .labelStyle(.titleAndIcon)
+                .disabled(store.currentProject == nil)
+                .onChange(of: photosItems) { _, items in
+                    guard !items.isEmpty else { return }
+                    store.addPhotos(items)
+                    photosItems = []
+                }
 
                 Button(action: { openProperties() }) {
                     Label(L10n.text(.properties), systemImage: "slider.horizontal.3")
                 }
+                .labelStyle(.titleAndIcon)
                 .disabled(store.currentProject == nil)
 
                 Button(action: { openPreview() }) {
                     Label(L10n.text(.preview), systemImage: "play.fill")
                 }
+                .labelStyle(.titleAndIcon)
                 .disabled(store.currentProject == nil || store.currentProject?.slides.isEmpty == true)
 
                 Button(action: { openExport() }) {
                     Label(L10n.text(.export), systemImage: "square.and.arrow.up")
                 }
+                .labelStyle(.titleAndIcon)
                 .disabled(store.currentProject == nil || store.currentProject?.slides.isEmpty == true)
+            }
+
+            // Ползунок размера миниатюр.
+            ToolbarItem(placement: .principal) {
+                HStack(spacing: 6) {
+                    Image(systemName: "square.grid.2x2")
+                        .foregroundStyle(.secondary)
+                    Slider(value: $settings.thumbnailSize, in: 120...260)
+                        .frame(width: 160)
+                        .help(L10n.text(.thumbnailSize))
+                }
             }
         }
         .onDisappear {

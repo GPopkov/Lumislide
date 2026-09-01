@@ -29,6 +29,7 @@ public final class AppSettings: ObservableObject {
         static let defaultPhotoDuration = "app.defaultPhotoDuration"
         static let autosaveEnabled = "app.autosaveEnabled"
         static let language = "app.language"
+        static let thumbnailSize = "app.thumbnailSize"
     }
 
     private let defaults: UserDefaults
@@ -46,6 +47,7 @@ public final class AppSettings: ObservableObject {
         _defaultPhotoDuration = Published(initialValue: defaults.object(forKey: Keys.defaultPhotoDuration) as? Double ?? 5.0)
         _autosaveEnabled = Published(initialValue: defaults.object(forKey: Keys.autosaveEnabled) as? Bool ?? true)
         _language = Published(initialValue: AppLanguage(rawValue: defaults.string(forKey: Keys.language) ?? "en") ?? .english)
+        _thumbnailSize = Published(initialValue: defaults.object(forKey: Keys.thumbnailSize) as? Double ?? 180.0)
     }
 
     // MARK: - Папка проектов
@@ -76,6 +78,13 @@ public final class AppSettings: ObservableObject {
     /// Язык интерфейса.
     @Published public var language: AppLanguage {
         didSet { defaults.set(language.rawValue, forKey: Keys.language) }
+    }
+
+    // MARK: - Сетка миниатюр
+
+    /// Размер (ширина) карточек миниатюр в сетке редактора.
+    @Published public var thumbnailSize: Double {
+        didSet { defaults.set(thumbnailSize, forKey: Keys.thumbnailSize) }
     }
 }
 

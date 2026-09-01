@@ -82,8 +82,6 @@ public final class TransitionBlender: @unchecked Sendable {
 
         let name: String
         switch transitionType {
-        case .rotateInward: name = "rotateInward"
-        case .rotateOutward: name = "rotateOutward"
         case .door: name = "door"
         case .grid: name = "gridTransition"
         case .colorFade: name = "colorFade"
@@ -323,46 +321,6 @@ private extension TransitionBlender {
     using namespace metal;
 
     constexpr sampler s = sampler(coord::normalized, address::clamp_to_edge, filter::linear);
-
-    kernel void rotateInward(
-        texture2d<float, access::sample> from [[texture(0)]],
-        texture2d<float, access::sample> to   [[texture(1)]],
-        texture2d<float, access::write>  out  [[texture(2)]],
-        constant float& progress [[buffer(0)]],
-        uint2 gid [[thread_position_in_grid]]
-    ) {
-        float2 uv = (float2(gid) + 0.5) / float2(from.get_width(), from.get_height());
-        float t = clamp(progress, 0.0, 1.0);
-        float angle = t * 1.570796;
-        float2 c = float2(0.5);
-        float ca = cos(angle), sa = sin(angle);
-        float2 d = uv - c;
-        float2 r = float2(d.x * ca - d.y * sa, d.x * sa + d.y * ca) * (1.0 - t * 0.5) + c;
-        float4 col;
-        if (r.x < 0.0 || r.x > 1.0 || r.y < 0.0 || r.y > 1.0) { col = to.sample(s, uv); }
-        else { col = from.sample(s, r); }
-        out.write(col, gid);
-    }
-
-    kernel void rotateOutward(
-        texture2d<float, access::sample> from [[texture(0)]],
-        texture2d<float, access::sample> to   [[texture(1)]],
-        texture2d<float, access::write>  out  [[texture(2)]],
-        constant float& progress [[buffer(0)]],
-        uint2 gid [[thread_position_in_grid]]
-    ) {
-        float2 uv = (float2(gid) + 0.5) / float2(from.get_width(), from.get_height());
-        float t = clamp(progress, 0.0, 1.0);
-        float angle = -t * 1.570796;
-        float2 c = float2(0.5);
-        float ca = cos(angle), sa = sin(angle);
-        float2 d = uv - c;
-        float2 r = float2(d.x * ca - d.y * sa, d.x * sa + d.y * ca) * (1.0 + t * 0.5) + c;
-        float4 col;
-        if (r.x < 0.0 || r.x > 1.0 || r.y < 0.0 || r.y > 1.0) { col = to.sample(s, uv); }
-        else { col = from.sample(s, r); }
-        out.write(col, gid);
-    }
 
     kernel void door(
         texture2d<float, access::sample> from [[texture(0)]],

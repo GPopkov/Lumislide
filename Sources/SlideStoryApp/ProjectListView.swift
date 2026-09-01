@@ -12,8 +12,9 @@ struct ProjectListView: View {
                     .font(.headline)
                 Spacer()
                 Button(action: { store.createNewProject() }) {
-                    Image(systemName: "plus")
+                    Label(L10n.text(.create), systemImage: "plus")
                 }
+                .labelStyle(.titleAndIcon)
                 .help(L10n.text(.createNewProject))
             }
             .padding(.horizontal, 12)

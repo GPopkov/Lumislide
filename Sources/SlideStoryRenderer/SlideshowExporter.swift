@@ -356,7 +356,7 @@ public final class SlideshowExporter: @unchecked Sendable {
             throw SlideshowExportError.emptyTimeline
         }
         for slide in project.slides {
-            if !BookmarkResolver.isAvailable(slide.bookmarkData) {
+            if !MediaResolver.isAvailable(slide) {
                 throw SlideshowExportError.missingFile(slide.displayName)
             }
         }
@@ -375,7 +375,7 @@ public final class SlideshowExporter: @unchecked Sendable {
     private func resolveVideoDurations() throws -> [Int: Double] {
         var result: [Int: Double] = [:]
         for (index, slide) in project.slides.enumerated() where slide.kind == .video {
-            let resolved = try BookmarkResolver.resolve(slide.bookmarkData)
+            let resolved = try MediaResolver.resolveWithAccess(slide)
             // Держатель security-scoped доступа передаём источнику, чтобы файл
             // оставался доступным на всё время жизни источника (в sandbox
             // доступ закрывается сразу после резолвинга без держателя).
@@ -423,6 +423,48 @@ public final class SlideshowExporter: @unchecked Sendable {
     private func baseBitrate(for size: CGSize) -> Double {
         let megapixels = size.width * size.height / 1_000_000
         return megapixels * 2_000_000
+    }
+
+    // MARK: - Оценка размера итогового файла
+
+    /// Общая длительность таймлайна проекта (с учётом фактических
+    /// длительностей видео-слайдов). Используется для оценки размера файла.
+    /// - Parameter project: проект.
+    public static func projectDuration(_ project: SlideshowProject) -> Double {
+        var videoDurations: [Int: Double] = [:]
+        for (index, slide) in project.slides.enumerated() where slide.kind == .video {
+            if let resolved = try? BookmarkResolver.resolve(slide.bookmarkData),
+               let source = try? VideoFrameSource(url: resolved.url, accessHolder: resolved.accessHolder) {
+                videoDurations[index] = source.duration
+            }
+        }
+        let timeline = TimelineBuilder.buildTimeline(project: project, videoDurations: videoDurations)
+        return TimelineBuilder.totalDuration(of: timeline)
+    }
+
+    /// Оценочный размер итогового видео (байт) для заданных параметров
+    /// экспорта без реального рендера.
+    ///
+    /// Формула: `битрейт × длительность / 8`, где битрейт берётся тем же
+    /// способом, что и при реальном экспорте (`baseBitrate × quality`).
+    /// H.265 учитывается коэффициентом ~0.6 (эффективнее H.264).
+    ///
+    /// - Parameters:
+    ///   - duration: длительность таймлайна в секундах.
+    ///   - codec: кодек экспорта.
+    ///   - resolution: разрешение холста.
+    ///   - quality: качество (целевой битрейт).
+    public static func estimatedFileSize(
+        duration: Double,
+        codec: VideoCodec,
+        resolution: CGSize,
+        quality: VideoQuality
+    ) -> Double {
+        guard duration > 0 else { return 0 }
+        let megapixels = resolution.width * resolution.height / 1_000_000
+        let bitrate = quality.bitrateMultiplier * (megapixels * 2_000_000)
+        let codecFactor: Double = codec == .h265 ? 0.6 : 1.0
+        return bitrate * duration / 8 * codecFactor
     }
 }
 

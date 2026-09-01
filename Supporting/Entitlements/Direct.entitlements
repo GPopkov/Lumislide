@@ -21,6 +21,10 @@
 	<key>com.apple.security.assets.music.read-only</key>
 	<true/>
 
+	<!-- Доступ к медиатеке Фото (PHAsset-ссылки, экспорт во временные файлы). -->
+	<key>com.apple.security.personal-information.photos-library</key>
+	<true/>
+
 	<!-- Hardened Runtime (обязателен для notarization). -->
 	<key>com.apple.security.cs.allow-jit</key>
 	<false/>

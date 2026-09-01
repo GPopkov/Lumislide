@@ -144,7 +144,7 @@ public enum SlideContextFactory {
             return cached
         }
 
-        let resolved = try BookmarkResolver.resolve(reference.bookmarkData)
+        let resolved = try MediaResolver.resolveWithAccess(reference)
         let url = resolved.url
 
         switch reference.kind {
@@ -173,6 +173,6 @@ public enum SlideContextFactory {
 
     /// Кэш доступности: возвращает false, если файл недоступен.
     public static func isFileAvailable(_ reference: MediaReference) -> Bool {
-        BookmarkResolver.isAvailable(reference.bookmarkData)
+        MediaResolver.isAvailable(reference)
     }
 }

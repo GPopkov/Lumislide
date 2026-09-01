@@ -44,5 +44,9 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .frame(width: 480, height: 240)
         .padding()
+        // Закрытие окна настроек по Esc.
+        .onExitCommand {
+            NSApp.keyWindow?.performClose(nil)
+        }
     }
 }

@@ -37,7 +37,7 @@ struct LumislideApp: App {
 public enum AppWindowsController {
     /// Открывает окно предпросмотра проекта.
     public static func openPreview(project: SlideshowProject, store: ProjectsStore) {
-        let window = NSWindow(
+        let window = EscCloseWindow(
             contentRect: NSRect(x: 0, y: 0, width: 960, height: 540),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
@@ -62,7 +62,7 @@ public enum AppWindowsController {
 
     /// Открывает окно экспорта проекта.
     public static func openExport(project: SlideshowProject) {
-        let window = NSWindow(
+        let window = EscCloseWindow(
             contentRect: NSRect(x: 0, y: 0, width: 520, height: 480),
             styleMask: [.titled, .closable],
             backing: .buffered,
@@ -85,7 +85,7 @@ public enum AppWindowsController {
 
     /// Открывает окно свойств проекта.
     public static func openProperties(project: SlideshowProject, store: ProjectsStore) {
-        let window = NSWindow(
+        let window = EscCloseWindow(
             contentRect: NSRect(x: 0, y: 0, width: 520, height: 520),
             styleMask: [.titled, .closable],
             backing: .buffered,

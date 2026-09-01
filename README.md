@@ -20,9 +20,9 @@ macOS sandbox.
 ### Features
 
 - **Drag & drop grid editor** — reorder slides by dragging cards (`NSCollectionView`).
-- **12 transitions** between slides:
+- **10 transitions** between slides:
   - Core Image: dissolve, slide left, slide right, wipe, push, iris open, iris close;
-  - Custom Metal kernels: rotate inward, rotate outward, door, grid, color fade.
+  - Custom Metal kernels: door, grid, color fade.
   - Transitions are applied **automatically and deterministically** (project seed), or
     forced per slide via right-click.
 - **Ken Burns effect** on photos — slow zoom/pan with a **face-aware focus point**
@@ -31,11 +31,15 @@ macOS sandbox.
 - **Background music** — attach your own audio file (by reference, not imported).
   Music plays only during photo slides (2 s fades around videos); video slides keep
   their **own audio track**.
-- **Aspect ratios** 16:9, 9:16, 1:1. No cropping: media is fitted and the empty space
+- **Aspect ratios** 16:9, 4:3, 9:16, 1:1. No cropping: media is fitted and the empty space
   is filled with a blurred, stretched copy of the same image.
+- **Photos library** — add your Photos app content directly (referenced by PHAsset,
+  exported to a temporary file only during preview/export; no copies in the project).
 - **Live preview window** — same render pipeline as export, at reduced resolution.
+  Closes with **Esc** (all windows do).
 - **Export** to MP4 (H.264 or H.265), configurable resolution / frame rate / quality,
-  with progress and cancellation.
+  with progress, cancellation and an **estimated output file size**.
+- **Thumbnail size slider** in the main toolbar (persisted).
 - **Localization**: English / Russian.
 
 ### Requirements
@@ -138,10 +142,10 @@ and app tests (localization, settings, import).
 
 - **Редактор-сетка с drag & drop** — порядок слайдов меняется перетаскиванием карточек
   (`NSCollectionView`).
-- **12 переходов** между слайдами:
+- **10 переходов** между слайдами:
   - Core Image: растворение, скольжение влево/вправо, вытеснение, сдвиг,
     открытие/закрытие круга;
-  - кастомные Metal-кернелы: вращение внутрь, вращение наружу, дверь, сетка, цветной fade.
+  - кастомные Metal-кернелы: дверь, сетка, цветной fade.
   - Переходы назначаются **автоматически и детерминированно** (seed проекта) либо
     принудительно для конкретного слайда через ПКМ.
 - **Эффект Кена Бёрнса** на фото — медленный зум/панорама с **учётом лиц**
@@ -150,12 +154,16 @@ and app tests (localization, settings, import).
 - **Фоновая музыка** — подключение собственного аудиофайла по ссылке (без импорта).
   Музыка звучит только на фото-слайдах (fade 2 c вокруг видео); на видео-слайдах
   звучит **собственная звуковая дорожка** видео.
-- **Соотношения сторон** 16:9, 9:16, 1:1. Обрезка не применяется: медиа вписывается
+- **Соотношения сторон** 16:9, 4:3, 9:16, 1:1. Обрезка не применяется: медиа вписывается
   целиком, пустое пространство заполняется размытой растянутой копией того же кадра.
+- **Медиатека Фото** — добавление контента из приложения «Фото» напрямую (ссылка на
+  PHAsset; во временный файл экспортируется только при предпросмотре/экспорте, копий в проекте нет).
 - **Окно предпросмотра** — тот же рендер-пайплайн, что и при экспорте, в пониженном
-  разрешении (живой рендер кадров, play/pause, перемотка, громкость).
+  разрешении (живой рендер кадров, play/pause, перемотка, громкость). Закрывается по **Esc**
+  (как и остальные окна).
 - **Экспорт** в MP4 (H.264 или H.265), настраиваемые разрешение / частота кадров /
-  качество, прогресс и отмена.
+  качество, прогресс, отмена и **оценка размера итогового файла**.
+- **Ползунок размера миниатюр** в тулбаре главного окна (сохраняется).
 - **Локализация**: русский / английский.
 
 ### Требования

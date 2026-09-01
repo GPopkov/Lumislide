@@ -4,6 +4,7 @@ import CoreGraphics
 /// Соотношения сторон холста.
 public enum AspectRatio: String, Codable, CaseIterable, Sendable {
     case landscape16x9
+    case landscape4x3
     case portrait9x16
     case square1x1
 
@@ -11,6 +12,7 @@ public enum AspectRatio: String, Codable, CaseIterable, Sendable {
     public var ratio: Double {
         switch self {
         case .landscape16x9: return 16.0 / 9.0
+        case .landscape4x3: return 4.0 / 3.0
         case .portrait9x16: return 9.0 / 16.0
         case .square1x1: return 1.0
         }
@@ -20,6 +22,7 @@ public enum AspectRatio: String, Codable, CaseIterable, Sendable {
     public var displayName: String {
         switch self {
         case .landscape16x9: return "16:9"
+        case .landscape4x3: return "4:3"
         case .portrait9x16: return "9:16"
         case .square1x1: return "1:1"
         }
@@ -48,6 +51,12 @@ public enum AspectRatio: String, Codable, CaseIterable, Sendable {
                 ResolutionPreset(id: "720p", size: CGSize(width: 1280, height: 720)),
                 ResolutionPreset(id: "1080p", size: CGSize(width: 1920, height: 1080)),
                 ResolutionPreset(id: "4K", size: CGSize(width: 3840, height: 2160)),
+            ]
+        case .landscape4x3:
+            return [
+                ResolutionPreset(id: "720p", size: CGSize(width: 960, height: 720)),
+                ResolutionPreset(id: "1080p", size: CGSize(width: 1440, height: 1080)),
+                ResolutionPreset(id: "4K", size: CGSize(width: 2880, height: 2160)),
             ]
         case .portrait9x16:
             return [

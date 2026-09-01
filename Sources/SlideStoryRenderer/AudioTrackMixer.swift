@@ -86,8 +86,10 @@ public enum AudioTrackMixer {
         // 1. Собственные дорожки видео-слайдов.
         for item in timeline where item.kind == .video {
             let slide = project.slides[item.slideIndex]
-            guard let resolved = try? BookmarkResolver.resolve(slide.bookmarkData) else { continue }
-            accessHolders.append(resolved.accessHolder)
+            guard let resolved = try? MediaResolver.resolveWithAccess(slide) else { continue }
+            if let holder = resolved.accessHolder {
+                accessHolders.append(holder)
+            }
             let asset = AVURLAsset(url: resolved.url)
             guard let sourceTrack = asset.tracks(withMediaType: .audio).first else { continue }
             guard let compTrack = composition.addMutableTrack(

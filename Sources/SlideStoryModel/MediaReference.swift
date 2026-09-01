@@ -74,6 +74,11 @@ public struct MediaReference: Codable, Identifiable, Equatable, Sendable {
     /// Кэш длительности видео-слайда (секунды), заполняется рендерером.
     public var cachedVideoDuration: Double?
 
+    /// Идентификатор PHAsset в медиатеке Фото (если слайд взят из Фото).
+    /// В этом случае `bookmarkData` не используется: контент экспортируется
+    /// во временный файл в момент предпросмотра/экспорта (без копий).
+    public var photosLocalIdentifier: String?
+
     public init(
         id: UUID = UUID(),
         kind: MediaKind,
@@ -83,7 +88,8 @@ public struct MediaReference: Codable, Identifiable, Equatable, Sendable {
         titleOverlay: TitleOverlay? = nil,
         isKenBurnsDisabled: Bool = false,
         faceRegions: [FaceRegion] = [],
-        cachedVideoDuration: Double? = nil
+        cachedVideoDuration: Double? = nil,
+        photosLocalIdentifier: String? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -94,6 +100,13 @@ public struct MediaReference: Codable, Identifiable, Equatable, Sendable {
         self.isKenBurnsDisabled = isKenBurnsDisabled
         self.faceRegions = faceRegions
         self.cachedVideoDuration = cachedVideoDuration
+        self.photosLocalIdentifier = photosLocalIdentifier
+    }
+
+    /// Является ли слайд ссылкой на ассет медиатеки Фото.
+    public var isFromPhotosLibrary: Bool {
+        guard let photosLocalIdentifier else { return false }
+        return !photosLocalIdentifier.isEmpty
     }
 }
 

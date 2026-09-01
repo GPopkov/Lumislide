@@ -26,6 +26,8 @@
 	<true/>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Lumislide uses the Photos library to let you add your photos and videos to slideshows. Media is referenced only — content is exported to a temporary file during preview/export.</string>
 	<key>NSSupportsAutomaticTermination</key>
 	<false/>
 	<key>NSSupportsSuddenTermination</key>

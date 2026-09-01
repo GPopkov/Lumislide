@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import SlideStoryModel
+import SlideStoryRenderer
 
 /// Ячейка `NSCollectionView`: карточка слайда в сетке редактора.
 ///
@@ -30,6 +31,8 @@ final class ThumbnailItem: NSCollectionViewItem {
     private let transitionLabel = NSTextField(labelWithString: "")
 
     private var slide: MediaReference?
+    /// Доступен ли файл слайда (управляет красной рамкой).
+    private var isFileAvailable = true
 
     // MARK: - Lifecycle
 
@@ -108,7 +111,9 @@ final class ThumbnailItem: NSCollectionViewItem {
             thumbnailView.topAnchor.constraint(equalTo: root.topAnchor, constant: 2),
             thumbnailView.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 2),
             thumbnailView.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -2),
-            thumbnailView.heightAnchor.constraint(equalToConstant: 110),
+            // Высота миниатюры масштабируется вместе с размером ячейки
+            // (ползунок размера миниатюр): 110/150 — базовое отношение.
+            thumbnailView.heightAnchor.constraint(equalTo: root.heightAnchor, multiplier: 110.0 / 150.0),
 
             numberLabel.topAnchor.constraint(equalTo: thumbnailView.bottomAnchor, constant: 4),
             numberLabel.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 4),
@@ -186,16 +191,35 @@ final class ThumbnailItem: NSCollectionViewItem {
             transitionIndicator.isHidden = true
         }
 
-        thumbnailView.toolTip = transitionName.map { "\(L10n.text(.transitionLabel)): \($0)" } ?? nil
+        // Доступность файла: красная рамка + тултип.
+        isFileAvailable = MediaResolver.isAvailable(slide)
+        thumbnailView.toolTip = isFileAvailable
+            ? (transitionName.map { "\(L10n.text(.transitionLabel)): \($0)" } ?? nil)
+            : L10n.text(.fileNotAvailable)
+        updateAppearance()
+    }
 
-        // Рамка недоступного файла.
-        if !BookmarkResolver.isAvailable(slide.bookmarkData) {
-            thumbnailView.layer?.borderWidth = 2
-            thumbnailView.layer?.borderColor = NSColor.systemRed.cgColor
-            thumbnailView.toolTip = L10n.text(.fileNotAvailable)
+    /// Выделение слайда мышью (устанавливается NSCollectionView).
+    override var isSelected: Bool {
+        didSet { updateAppearance() }
+    }
+
+    /// Рисует состояние ячейки: выделение акцентной рамкой/подсветкой,
+    /// недоступный файл — красной рамкой.
+    private func updateAppearance() {
+        guard let layer = thumbnailView.layer else { return }
+        if !isFileAvailable {
+            layer.borderWidth = 2
+            layer.borderColor = NSColor.systemRed.cgColor
+            layer.backgroundColor = NSColor.quaternaryLabelColor.cgColor
+        } else if isSelected {
+            layer.borderWidth = 3
+            layer.borderColor = NSColor.controlAccentColor.cgColor
+            layer.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.15).cgColor
         } else {
-            thumbnailView.layer?.borderWidth = 0
-            thumbnailView.layer?.borderColor = NSColor.clear.cgColor
+            layer.borderWidth = 0
+            layer.borderColor = NSColor.clear.cgColor
+            layer.backgroundColor = NSColor.quaternaryLabelColor.cgColor
         }
     }
 

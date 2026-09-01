@@ -1,9 +1,9 @@
 import Foundation
 
-/// 12 типов переходов между слайдами.
+/// 10 типов переходов между слайдами.
 ///
 /// Первые 7 реализуются встроенными фильтрами Core Image,
-/// последние 5 — кастомными Metal-кернелами.
+/// последние 3 — кастомными Metal-кернелами.
 public enum TransitionType: String, Codable, CaseIterable, Sendable {
     /// Растворение (CI)
     case dissolve
@@ -19,10 +19,6 @@ public enum TransitionType: String, Codable, CaseIterable, Sendable {
     case irisOpen
     /// Закрытие круга (CI)
     case irisClose
-    /// Вращение внутрь (Metal)
-    case rotateInward
-    /// Вращение наружу (Metal)
-    case rotateOutward
     /// Дверь (Metal)
     case door
     /// Сетка (Metal)
@@ -41,7 +37,7 @@ public enum TransitionType: String, Codable, CaseIterable, Sendable {
         switch self {
         case .dissolve, .slideLeft, .slideRight, .wipe, .push, .irisOpen, .irisClose:
             return .coreImage
-        case .rotateInward, .rotateOutward, .door, .grid, .colorFade:
+        case .door, .grid, .colorFade:
             return .metal
         }
     }
@@ -58,8 +54,6 @@ public enum TransitionType: String, Codable, CaseIterable, Sendable {
         case .push: return "Push"
         case .irisOpen: return "Iris Open"
         case .irisClose: return "Iris Close"
-        case .rotateInward: return "Rotate Inward"
-        case .rotateOutward: return "Rotate Outward"
         case .door: return "Door"
         case .grid: return "Grid"
         case .colorFade: return "Color Fade"
@@ -68,13 +62,12 @@ public enum TransitionType: String, Codable, CaseIterable, Sendable {
 }
 
 public extension TransitionType {
-    /// Канонический порядок всех 12 переходов — используется генератором
+    /// Канонический порядок всех 10 переходов — используется генератором
     /// случайного выбора, чтобы индексы не зависели от порядка `allCases`
     /// при будущих изменениях модели.
     static let transitionOrder: [TransitionType] = [
         .dissolve, .slideLeft, .slideRight, .wipe, .push,
-        .irisOpen, .irisClose, .rotateInward, .rotateOutward,
-        .door, .grid, .colorFade,
+        .irisOpen, .irisClose, .door, .grid, .colorFade,
     ]
 
     /// Индекс перехода в каноническом порядке (0...11).

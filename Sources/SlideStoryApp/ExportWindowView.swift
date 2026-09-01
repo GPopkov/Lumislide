@@ -30,6 +30,11 @@ struct ExportWindowView: View {
 
     @State private var exporter: SlideshowExporter?
 
+    /// Длительность таймлайна (для оценки размера файла).
+    @State private var timelineDuration: Double = 0
+    /// Отформатированная оценка размера («≈ 128 МБ»), пусто — пока не посчитана.
+    @State private var estimatedSizeText: String = ""
+
     private var presets: [AspectRatio.ResolutionPreset] {
         aspectRatio.presets
     }
@@ -48,6 +53,7 @@ struct ExportWindowView: View {
                     Text("H.264").tag(VideoCodec.h264)
                     Text("H.265 (HEVC)").tag(VideoCodec.h265)
                 }
+                .onChange(of: codec) { _, _ in updateEstimatedSize() }
 
                 Picker(L10n.text(.aspectRatio), selection: $aspectRatio) {
                     ForEach(AspectRatio.allCases, id: \.self) { ratio in
@@ -57,6 +63,7 @@ struct ExportWindowView: View {
                 .onChange(of: aspectRatio) { _, newValue in
                     presetID = newValue.presets.contains(where: { $0.id == presetID })
                         ? presetID : newValue.presets[1].id
+                    updateEstimatedSize()
                 }
 
                 Picker(L10n.text(.resolution), selection: $presetID) {
@@ -65,6 +72,7 @@ struct ExportWindowView: View {
                             .tag(preset.id)
                     }
                 }
+                .onChange(of: presetID) { _, _ in updateEstimatedSize() }
 
                 Picker(L10n.text(.frameRate), selection: $frameRate) {
                     Text("24 fps").tag(FrameRate.fps24)
@@ -75,6 +83,15 @@ struct ExportWindowView: View {
                 Picker(L10n.text(.quality), selection: $quality) {
                     ForEach(VideoQuality.allCases, id: \.self) { q in
                         Text(q.displayName).tag(q)
+                    }
+                }
+                .onChange(of: quality) { _, _ in updateEstimatedSize() }
+
+                // Оценка размера итогового файла.
+                if !estimatedSizeText.isEmpty {
+                    LabeledContent(L10n.text(.estimatedFileSize)) {
+                        Text(estimatedSizeText)
+                            .monospacedDigit()
                     }
                 }
             }
@@ -125,8 +142,43 @@ struct ExportWindowView: View {
             frameRate = project.exportSettings.frameRate
             quality = project.exportSettings.quality
             presetID = aspectRatio.presets[1].id
+
+            // Длительность проекта (резолвинг видео-файлов может занять
+            // время) — считаем в фоне, чтобы не блокировать окно.
+            let project = self.project
+            Task.detached(priority: .userInitiated) {
+                let duration = SlideshowExporter.projectDuration(project)
+                await MainActor.run {
+                    self.timelineDuration = duration
+                    self.updateEstimatedSize()
+                }
+            }
         }
         .onDisappear { exporter?.cancel() }
+    }
+
+    // MARK: - Оценка размера файла
+
+    private func updateEstimatedSize() {
+        guard timelineDuration > 0 else {
+            estimatedSizeText = ""
+            return
+        }
+        let bytes = SlideshowExporter.estimatedFileSize(
+            duration: timelineDuration,
+            codec: codec,
+            resolution: selectedSize,
+            quality: quality
+        )
+        estimatedSizeText = Self.formatBytes(bytes)
+    }
+
+    private static func formatBytes(_ bytes: Double) -> String {
+        let mb = bytes / (1024 * 1024)
+        if mb >= 1024 {
+            return String(format: L10n.text(.approxGB), "\(Int(mb / 1024))")
+        }
+        return String(format: L10n.text(.approxMB), "\(Int(mb))")
     }
 
     // MARK: - Экспорт

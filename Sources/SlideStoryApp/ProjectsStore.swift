@@ -2,6 +2,12 @@ import Foundation
 import Combine
 import AppKit
 import UniformTypeIdentifiers
+import Photos
+#if canImport(_PhotosUI_SwiftUI)
+import _PhotosUI_SwiftUI
+#else
+import PhotosUI
+#endif
 import SlideStoryModel
 import SlideStoryRenderer
 
@@ -216,6 +222,41 @@ public final class ProjectsStore: ObservableObject {
         }
     }
 
+    /// Добавляет выбранные элементы медиатеки Фото в конец проекта.
+    /// Хранятся ссылки на PHAsset (`photosLocalIdentifier`), контент
+    /// экспортируется во временный файл при предпросмотре/экспорте.
+    /// - Parameter items: выбранные элементы `PhotosPicker`.
+    public func addPhotos(_ items: [PhotosPickerItem]) {
+        guard currentProject != nil, !items.isEmpty else { return }
+        let identifiers = items.compactMap { $0.itemIdentifier }
+        guard !identifiers.isEmpty else { return }
+
+        // Определяем тип и имя по ассету.
+        let assets = PHAsset.fetchAssets(withLocalIdentifiers: identifiers, options: nil)
+        var references: [MediaReference] = []
+        assets.enumerateObjects { asset, _, _ in
+            let kind: MediaKind = asset.mediaType == .video ? .video : .photo
+            let name = PHAssetResource.assetResources(for: asset).first?.originalFilename
+                ?? asset.localIdentifier
+            references.append(MediaReference(
+                kind: kind,
+                bookmarkData: "",
+                displayName: name,
+                photosLocalIdentifier: asset.localIdentifier
+            ))
+        }
+        guard !references.isEmpty else { return }
+
+        mutate { project in
+            project.slides.append(contentsOf: references)
+        }
+
+        // Детекция лиц для фото — заранее.
+        for slide in references where slide.kind == .photo {
+            precomputeFaces(for: slide.id)
+        }
+    }
+
     /// Детектирует лица на фото-слайде в фоне и сохраняет результат
     /// в `MediaReference.faceRegions` (кэш, не пересчитывается на экспорте).
     /// - Parameter slideID: id слайда.
@@ -226,14 +267,14 @@ public final class ProjectsStore: ObservableObject {
               slide.faceRegions.isEmpty else { return }
 
         let id = slideID
-        let bookmark = slide.bookmarkData
+        let reference = slide
 
         // ВАЖНО: Vision-детекция тяжёлая (для больших фото — секунды/минуты).
         // Выполняем её на фоновом потоке (Task.detached), иначе главный поток
         // блокируется и приложение «зависает» (курсор-крутилка, не открывается
         // NSOpenPanel и т.п.).
         Task.detached(priority: .userInitiated) {
-            guard let resolved = try? BookmarkResolver.resolve(bookmark),
+            guard let resolved = try? MediaResolver.resolveWithAccess(reference),
                   let image = CIImage(contentsOf: resolved.url) else { return }
             let regions = (try? await FaceDetector.detectFaces(in: image)) ?? []
             guard !regions.isEmpty else { return }

@@ -3,7 +3,7 @@ using namespace metal;
 
 // ============================================================================
 // Кастомные переходы (Metal-кернелы):
-//   rotateInward / rotateOutward / door / grid / colorFade
+//   door / grid / colorFade
 //
 // Все кернелы принимают: исходное изображение (из него выходим),
 // целевое изображение (в него переходим), параметр t (0...1),
@@ -35,68 +35,7 @@ float4 sampleSource(texture2d<float> from, sampler s, float2 uv, float scale, fl
     return from.sample(s, scaled);
 }
 
-// --- Вращение внутрь/наружу (rotate) ----------------------------------------
-
-kernel void rotateInward(
-    texture2d<float, access::sample> from [[texture(0)]],
-    texture2d<float, access::sample> to   [[texture(1)]],
-    texture2d<float, access::write>  out  [[texture(2)]],
-    constant float& progress [[buffer(0)]],
-    uint2 gid [[thread_position_in_grid]]
-) {
-    float2 uv = uvForId(gid, from);
-    float t = easeInOutCubic(progress);
-    float angle = t * 3.14159265 / 2.0; // 90°
-    float2 center = float2(0.5);
-    float cosA = cos(angle);
-    float sinA = sin(angle);
-    float2 delta = uv - center;
-    // Вращение + уменьшение масштаба.
-    float2 rotated = float2(
-        delta.x * cosA - delta.y * sinA,
-        delta.x * sinA + delta.y * cosA
-    ) * (1.0 - t * 0.5);
-    float2 rotatedUV = rotated + center;
-
-    float4 color;
-    if (rotatedUV.x < 0.0 || rotatedUV.x > 1.0 || rotatedUV.y < 0.0 || rotatedUV.y > 1.0) {
-        color = to.sample(s, uv);
-    } else {
-        color = from.sample(s, rotatedUV);
-    }
-    out.write(color, gid);
-}
-
-kernel void rotateOutward(
-    texture2d<float, access::sample> from [[texture(0)]],
-    texture2d<float, access::sample> to   [[texture(1)]],
-    texture2d<float, access::write>  out  [[texture(2)]],
-    constant float& progress [[buffer(0)]],
-    uint2 gid [[thread_position_in_grid]]
-) {
-    float2 uv = uvForId(gid, from);
-    float t = easeInOutCubic(progress);
-    float angle = -t * 3.14159265 / 2.0;
-    float2 center = float2(0.5);
-    float cosA = cos(angle);
-    float sinA = sin(angle);
-    float2 delta = uv - center;
-    float2 rotated = float2(
-        delta.x * cosA - delta.y * sinA,
-        delta.x * sinA + delta.y * cosA
-    ) * (1.0 + t * 0.5);
-    float2 rotatedUV = rotated + center;
-
-    float4 color;
-    if (rotatedUV.x < 0.0 || rotatedUV.x > 1.0 || rotatedUV.y < 0.0 || rotatedUV.y > 1.0) {
-        color = to.sample(s, uv);
-    } else {
-        color = from.sample(s, rotatedUV);
-    }
-    out.write(color, gid);
-}
-
-// --- Дверь (door) ------------------------------------------------------------
+// --- Дверь (door) -------------------------------------------------------------
 
 kernel void door(
     texture2d<float, access::sample> from [[texture(0)]],

@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 import AVFoundation
 import SlideStoryModel
+import SlideStoryRenderer
 
 /// SwiftUI-обёртка над `NSCollectionView` для сетки миниатюр.
 ///
@@ -10,8 +11,15 @@ import SlideStoryModel
 /// (см. раздел 3 ТЗ). Порядок карточек = порядок слайдов в проекте.
 struct ThumbnailGridView: NSViewRepresentable {
     let project: SlideshowProject
+    /// Ширина карточки миниатюры (высота сохраняет пропорцию 6:5).
+    var thumbnailSize: Double = 180
 
     @EnvironmentObject private var store: ProjectsStore
+
+    /// Размер ячейки для заданной ширины карточки (базовое 180×150).
+    static func itemSize(for thumbnailSize: Double) -> NSSize {
+        NSSize(width: thumbnailSize, height: thumbnailSize * 150.0 / 180.0)
+    }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(store: store)
@@ -23,7 +31,7 @@ struct ThumbnailGridView: NSViewRepresentable {
         scrollView.drawsBackground = false
 
         let layout = NSCollectionViewFlowLayout()
-        layout.itemSize = NSSize(width: 180, height: 150)
+        layout.itemSize = Self.itemSize(for: thumbnailSize)
         layout.minimumInteritemSpacing = 10
         layout.minimumLineSpacing = 12
         layout.sectionInset = NSEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
@@ -52,6 +60,14 @@ struct ThumbnailGridView: NSViewRepresentable {
         context.coordinator.store = store
         context.coordinator.updateSlides(project.slides)
         context.coordinator.reloadIfNeeded()
+
+        // Применяем новый размер карточек к layout сетки.
+        if let collectionView = scrollView.documentView as? NSCollectionView,
+           let layout = collectionView.collectionViewLayout as? NSCollectionViewFlowLayout,
+           layout.itemSize.width != thumbnailSize {
+            layout.itemSize = Self.itemSize(for: thumbnailSize)
+            layout.invalidateLayout()
+        }
     }
 }
 
@@ -175,12 +191,12 @@ struct ThumbnailGridView: NSViewRepresentable {
             loadingThumbnails.insert(slide.id)
 
             let id = slide.id
-            let bookmark = slide.bookmarkData
+            let reference = slide
             let kind = slide.kind
             let cache = ThumbnailCache.shared
 
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                guard let resolved = try? BookmarkResolver.resolve(bookmark) else {
+                guard let resolved = try? MediaResolver.resolveWithAccess(reference) else {
                     DispatchQueue.main.async { [weak self] in
                         self?.loadingThumbnails.remove(id)
                     }
@@ -301,7 +317,7 @@ struct ThumbnailGridView: NSViewRepresentable {
         @objc private func addTitle(_ sender: NSMenuItem) {
             guard let id = sender.representedObject as? UUID,
                   let window = collectionView?.window else { return }
-            let sheet = NSWindow(
+            let sheet = EscCloseWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 420, height: 380),
                 styleMask: [.titled],
                 backing: .buffered,

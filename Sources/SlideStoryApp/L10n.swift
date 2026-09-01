@@ -18,7 +18,8 @@ public enum L10n {
 
         // Сетка / карточки
         case automaticRandom, forceTransition, addTitle, disableKenBurns,
-             relinkFile, hasTitle, transitionLabel, fileNotAvailable, video
+             relinkFile, hasTitle, transitionLabel, fileNotAvailable, video,
+             thumbnailSize, fromPhotos
 
         // Свойства проекта
         case projectProperties, name, photoDuration, transitionDuration,
@@ -34,7 +35,7 @@ public enum L10n {
         // Экспорт
         case codec, resolution, frameRate, quality, ready, exporting,
              exportFinished, exportCancelled, exportFailed, cancelExport,
-             timeLeft
+             timeLeft, estimatedFileSize, approxMB, approxGB
 
         // Настройки
         case settings, projectsFolder, defaultPhotoDuration, autosave, language
@@ -67,6 +68,8 @@ public enum L10n {
             .transitionLabel: "Transition",
             .fileNotAvailable: "File not available — right-click to relink",
             .video: "video",
+            .thumbnailSize: "Thumbnail Size",
+            .fromPhotos: "From Photos Library",
 
             .projectProperties: "Project Properties",
             .name: "Name",
@@ -105,6 +108,9 @@ public enum L10n {
             .exportFailed: "Export failed.",
             .cancelExport: "Cancel Export",
             .timeLeft: "s left",
+            .estimatedFileSize: "Estimated File Size",
+            .approxMB: "≈ %@ MB",
+            .approxGB: "≈ %@ GB",
 
             .settings: "Settings",
             .projectsFolder: "Projects Folder",
@@ -136,6 +142,8 @@ public enum L10n {
             .transitionLabel: "Переход",
             .fileNotAvailable: "Файл недоступен — ПКМ, чтобы переподключить",
             .video: "видео",
+            .thumbnailSize: "Размер миниатюр",
+            .fromPhotos: "Из медиатеки Фото",
 
             .projectProperties: "Свойства проекта",
             .name: "Название",
@@ -174,6 +182,9 @@ public enum L10n {
             .exportFailed: "Экспорт не удался.",
             .cancelExport: "Отменить экспорт",
             .timeLeft: "с осталось",
+            .estimatedFileSize: "Примерный размер файла",
+            .approxMB: "≈ %@ МБ",
+            .approxGB: "≈ %@ ГБ",
 
             .settings: "Настройки",
             .projectsFolder: "Папка проектов",
@@ -202,7 +213,7 @@ public enum L10n {
 
     // MARK: - Названия переходов
 
-    /// Локализованные названия 12 типов переходов.
+    /// Локализованные названия типов переходов.
     /// (В модели `TransitionType.displayName` — английские имена для тестов;
     /// UI использует эту таблицу.)
     private static let transitionNames: [AppLanguage: [TransitionType: String]] = [
@@ -214,8 +225,6 @@ public enum L10n {
             .push: "Push",
             .irisOpen: "Iris Open",
             .irisClose: "Iris Close",
-            .rotateInward: "Rotate Inward",
-            .rotateOutward: "Rotate Outward",
             .door: "Door",
             .grid: "Grid",
             .colorFade: "Color Fade",
@@ -228,8 +237,6 @@ public enum L10n {
             .push: "Сдвиг",
             .irisOpen: "Открытие круга",
             .irisClose: "Закрытие круга",
-            .rotateInward: "Вращение внутрь",
-            .rotateOutward: "Вращение наружу",
             .door: "Дверь",
             .grid: "Сетка",
             .colorFade: "Цветной fade",

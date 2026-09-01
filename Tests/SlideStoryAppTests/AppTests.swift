@@ -73,6 +73,7 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(settings.autosaveEnabled, true)
         XCTAssertEqual(settings.defaultPhotoDuration, 5.0)
         XCTAssertEqual(settings.language, .english)
+        XCTAssertEqual(settings.thumbnailSize, 180.0)
 
         // Изменение сохраняется в UserDefaults.
         settings.defaultPhotoDuration = 7.0

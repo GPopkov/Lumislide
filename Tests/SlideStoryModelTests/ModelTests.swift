@@ -22,13 +22,13 @@ final class ModelTests: XCTestCase {
         XCTAssertTrue(TransitionType.transitionOrder.contains(b))
     }
 
-    func testTransitionPickerCoversAllTwelveTypes() {
+    func testTransitionPickerCoversAllTenTypes() {
         let seed: UInt64 = 0xDEADBEEF
         var seen = Set<TransitionType>()
         for index in 0..<10_000 {
             seen.insert(TransitionPicker.transition(seed: seed, slideIndex: index))
         }
-        XCTAssertEqual(seen.count, 12, "Генератор должен покрывать все 12 типов переходов")
+        XCTAssertEqual(seen.count, 10, "Генератор должен покрывать все 10 типов переходов")
     }
 
     func testCanonicalIndexRoundTrip() {
@@ -38,9 +38,9 @@ final class ModelTests: XCTestCase {
         }
     }
 
-    func testTwelveTransitions() {
-        XCTAssertEqual(TransitionType.allCases.count, 12)
-        XCTAssertEqual(TransitionType.transitionOrder.count, 12)
+    func testTenTransitions() {
+        XCTAssertEqual(TransitionType.allCases.count, 10)
+        XCTAssertEqual(TransitionType.transitionOrder.count, 10)
     }
 
     // MARK: - Project

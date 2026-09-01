@@ -182,7 +182,7 @@ final class PreviewRenderer {
     private static func resolveVideoDurations(project: SlideshowProject) -> [Int: Double] {
         var result: [Int: Double] = [:]
         for (index, slide) in project.slides.enumerated() where slide.kind == .video {
-            guard let resolved = try? BookmarkResolver.resolve(slide.bookmarkData),
+            guard let resolved = try? MediaResolver.resolveWithAccess(slide),
                   let source = try? VideoFrameSource(url: resolved.url, accessHolder: resolved.accessHolder) else { continue }
             result[index] = source.duration
         }
