@@ -23,7 +23,9 @@ final class MetalTransitionOrientationTests: XCTestCase {
     }
 
     /// Проверяет, что в верхней части кадра красный, в нижней — синий (не перевёрнут).
-    private func isUpright(_ image: CIImage) -> Bool {
+    /// - Parameter x: колонка для проверки (для «Двери» исходный кадр на раннем
+    ///   progress виден у краёв, т.к. дверь открывается от центра).
+    private func isUpright(_ image: CIImage, atX x: Int = 8) -> Bool {
         let ctx = CIContext()
         guard let cg = ctx.createCGImage(image, from: image.extent) else { return false }
         var pixels = [UInt8](repeating: 0, count: cg.width * cg.height * 4)
@@ -35,8 +37,8 @@ final class MetalTransitionOrientationTests: XCTestCase {
             let i = (y * cg.width + x) * 4
             return (Int(pixels[i]), Int(pixels[i + 1]), Int(pixels[i + 2]))
         }
-        let top = px(cg.width / 2, 4)
-        let bottom = px(cg.width / 2, cg.height - 5)
+        let top = px(x, 4)
+        let bottom = px(x, cg.height - 5)
         return top.0 > top.2 && bottom.2 > bottom.0
     }
 

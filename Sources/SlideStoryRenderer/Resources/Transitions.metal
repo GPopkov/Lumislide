@@ -46,22 +46,23 @@ kernel void door(
 ) {
     float2 uv = uvForId(gid, from);
     float t = easeInOutCubic(progress);
-    // Двустворчатые двери: левая половина и правая половина закрываются к центру.
-    float halfVal = 0.5;
-    float localX = uv.x;
-    float mirrored = localX < halfVal ? localX / halfVal : (1.0 - localX) / halfVal;
-    // Открытие двери: видимая область сжимается с краёв к центру.
-    float visibleEdge = t; // 0 → полностью открыто, 1 → закрыто.
-    float2 srcUV = uv;
-    if (mirrored < t) {
-        // Часть уже закрыта — показываем целевое изображение.
-        out.write(to.sample(s, uv), gid);
+    // Двустворчатые двери: створки — половины ИСХОДНОГО кадра — строго
+    // параллельно расходятся от центра к краям (rigid, без сжатия), в
+    // образовавшемся проёме виден целевой кадр. Растяжения картинки нет:
+    // лица на исходном слайде не деформируются.
+    float travel = t * 0.5; // 0 → двери закрыты, 0.5 → полностью открыты
+    if (uv.x <= 0.5 - travel) {
+        // Левая створка ушла влево: показываем её исходное содержимое.
+        out.write(from.sample(s, float2(uv.x + travel, uv.y)), gid);
         return;
     }
-    // Сжимаем координату X к центру.
-    float squeeze = 1.0 - t;
-    srcUV.x = halfVal + (uv.x - halfVal) * squeeze;
-    out.write(from.sample(s, srcUV), gid);
+    if (uv.x >= 0.5 + travel) {
+        // Правая створка ушла вправо.
+        out.write(from.sample(s, float2(uv.x - travel, uv.y)), gid);
+        return;
+    }
+    // Центральный проём — целевой кадр.
+    out.write(to.sample(s, uv), gid);
 }
 
 // --- Сетка (grid) ------------------------------------------------------------

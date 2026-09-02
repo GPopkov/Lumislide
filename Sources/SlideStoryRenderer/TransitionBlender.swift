@@ -361,13 +361,18 @@ private extension TransitionBlender {
     ) {
         float2 uv = (float2(gid) + 0.5) / float2(from.get_width(), from.get_height());
         float t = clamp(progress, 0.0, 1.0);
-        float halfVal = 0.5;
-        float localX = uv.x;
-        float mirrored = localX < halfVal ? localX / halfVal : (1.0 - localX) / halfVal;
-        if (mirrored < t) { out.write(to.sample(s, uv), gid); return; }
-        float2 src = uv;
-        src.x = halfVal + (uv.x - halfVal) * (1.0 - t);
-        out.write(from.sample(s, src), gid);
+        // Створки (половины исходного кадра) расходятся от центра к краям
+        // строго параллельно — без сжатия/растяжения картинки.
+        float travel = t * 0.5;
+        if (uv.x <= 0.5 - travel) {
+            out.write(from.sample(s, float2(uv.x + travel, uv.y)), gid);
+            return;
+        }
+        if (uv.x >= 0.5 + travel) {
+            out.write(from.sample(s, float2(uv.x - travel, uv.y)), gid);
+            return;
+        }
+        out.write(to.sample(s, uv), gid);
     }
 
     kernel void gridTransition(
