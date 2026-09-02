@@ -207,9 +207,15 @@ struct ThumbnailGridView: NSViewRepresentable {
                 }
                 let cacheKey = cache.key(for: resolved.url)
 
-                let result: NSImage?
+                // ВАЖНО: храним и показываем ТОЛЬКО маленькую миниатюру.
+                // Полноразмерный NSImage (у телефонов 6–12 МП) декодируется
+                // и пережимается в JPEG секунды — после добавления 10+ фото
+                // фоновая генерация «вешает» систему, а карточки долго
+                // остаются заглушками.
+                var result: NSImage?
                 if let cached = cache.image(forKey: cacheKey) {
-                    result = cached
+                    // Устаревшие записи кэша могут быть полноразмерными.
+                    result = Self.downscaled(cached, maxPixel: 512) ?? cached
                 } else {
                     switch kind {
                     case .photo:
@@ -217,8 +223,10 @@ struct ThumbnailGridView: NSViewRepresentable {
                     case .video:
                         result = Self.firstVideoFrame(url: resolved.url)
                     }
-                    if let result {
-                        cache.store(result, forKey: cacheKey)
+                    if let full = result {
+                        let small = Self.downscaled(full, maxPixel: 512) ?? full
+                        cache.store(small, forKey: cacheKey)
+                        result = small
                     }
                 }
 
@@ -232,6 +240,28 @@ struct ThumbnailGridView: NSViewRepresentable {
                     }
                 }
             }
+        }
+
+        /// Уменьшает изображение до нужного размера карточки (быстро, ~КБ).
+        nonisolated private static func downscaled(_ image: NSImage, maxPixel: CGFloat) -> NSImage? {
+            guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return image }
+            let width = cg.width, height = cg.height
+            guard width > 0, height > 0 else { return image }
+            let scale = min(maxPixel / CGFloat(width), maxPixel / CGFloat(height), 1)
+            guard scale < 1 else { return image }
+            let targetWidth = max(Int((CGFloat(width) * scale).rounded()), 1)
+            let targetHeight = max(Int((CGFloat(height) * scale).rounded()), 1)
+            guard let context = CGContext(
+                data: nil,
+                width: targetWidth, height: targetHeight,
+                bitsPerComponent: 8, bytesPerRow: 0,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return image }
+            context.interpolationQuality = .high
+            context.draw(cg, in: CGRect(x: 0, y: 0, width: targetWidth, height: targetHeight))
+            guard let scaled = context.makeImage() else { return image }
+            return NSImage(cgImage: scaled, size: NSSize(width: targetWidth, height: targetHeight))
         }
 
         /// Планирует повторную попытку загрузки миниатюры (до 3 попыток).

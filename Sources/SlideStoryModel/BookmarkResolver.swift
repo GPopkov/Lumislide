@@ -1,4 +1,5 @@
 import Foundation
+import os.log
 
 /// Ошибки резолвинга security-scoped bookmarks.
 public enum BookmarkError: Error, LocalizedError, Equatable, Sendable {
@@ -70,6 +71,9 @@ public enum BookmarkResolver {
     /// Опции создания bookmarks (используются при добавлении файлов).
     public static let creationOptions: URL.BookmarkCreationOptions = [.withSecurityScope, .securityScopeAllowOnlyReadAccess]
 
+    /// Диагностика security-scoped доступа (см. `log show --predicate 'subsystem == "com.lumislide.app"'`).
+    private static let log = Logger(subsystem: "com.lumislide.app", category: "BookmarkResolver")
+
     // MARK: - Сессионный доступ (fresh bookmarks)
 
     /// macOS выдаёт приложению временный (powerbox) доступ к файлам,
@@ -106,6 +110,7 @@ public enum BookmarkResolver {
             )
             sessionHolders[url] = holder
         }
+        log.info("registered session URL for \(url.lastPathComponent, privacy: .public)")
     }
 
     /// URL, зарегистрированный для bookmark'а в текущей сессии (если есть).
@@ -127,6 +132,7 @@ public enum BookmarkResolver {
             includingResourceValuesForKeys: nil,
             relativeTo: nil
         )
+        log.info("created bookmark for \(url.lastPathComponent, privacy: .public)")
         return data.base64EncodedString()
     }
 
@@ -155,6 +161,7 @@ public enum BookmarkResolver {
         let url = try url(fromBookmark: base64)
         let accessGranted = url.startAccessingSecurityScopedResource()
         guard accessGranted else {
+            log.error("access denied for \(url.lastPathComponent, privacy: .public)")
             throw BookmarkError.accessDenied
         }
 

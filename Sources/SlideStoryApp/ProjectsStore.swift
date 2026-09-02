@@ -288,9 +288,34 @@ public final class ProjectsStore: ObservableObject {
         panel.message = L10n.text(.addMedia)
 
         guard panel.runModal() == .OK else { return }
+        let urls = panel.urls
 
+        // Создание security-scoped bookmark'ов может заблокироваться на
+        // медленных/сетевых томах (и в песочнице) — выполняем в фоне,
+        // чтобы главный поток (и UI) не «зависал» после выбора файлов.
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self else { return }
+            let newSlides = Self.makeReferences(from: urls)
+            guard !newSlides.isEmpty else { return }
+            await MainActor.run {
+                self.mutate { project in
+                    self.insertSlides(newSlides, into: &project)
+                }
+
+                // Детекция лиц для фото — заранее (кэшируется в MediaReference),
+                // чтобы Ken Burns учитывал лица при предпросмотре/экспорте.
+                for slide in newSlides where slide.kind == .photo {
+                    self.precomputeFaces(for: slide.id)
+                }
+            }
+        }
+    }
+
+    /// Строит слайды по выбранным URL (bookmarks + Live Photo пары).
+    /// Вызывается в фоне — НЕ трогает main-actor state.
+    nonisolated private static func makeReferences(from urls: [URL]) -> [MediaReference] {
         var newSlides: [MediaReference] = []
-        for url in panel.urls {
+        for url in urls {
             guard let kind = MediaImporter.mediaKind(for: url) else { continue }
             guard let bookmark = try? BookmarkResolver.createBookmark(for: url) else { continue }
 
@@ -317,17 +342,7 @@ public final class ProjectsStore: ObservableObject {
                 displayName: url.lastPathComponent
             ))
         }
-
-        guard !newSlides.isEmpty else { return }
-        mutate { project in
-            insertSlides(newSlides, into: &project)
-        }
-
-        // Детекция лиц для фото — заранее (кэшируется в MediaReference),
-        // чтобы Ken Burns учитывал лица при предпросмотре/экспорте.
-        for slide in newSlides where slide.kind == .photo {
-            precomputeFaces(for: slide.id)
-        }
+        return newSlides
     }
 
     /// Добавляет выбранные элементы медиатеки Фото в конец проекта.
@@ -465,13 +480,20 @@ public final class ProjectsStore: ObservableObject {
         panel.allowsMultipleSelection = false
         panel.message = L10n.text(.relinkFile)
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        guard let bookmark = try? BookmarkResolver.createBookmark(for: url) else { return }
-        // Свежий bookmark в текущей сессии (см. registerSessionURL).
-        BookmarkResolver.registerSessionURL(url, forBookmark: bookmark)
 
-        mutate { project in
-            project.slides[index].bookmarkData = bookmark
-            project.slides[index].displayName = url.lastPathComponent
+        // Создание bookmark в фоне (см. addMedia/chooseMusic) — не блокируем UI.
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let bookmark = try? BookmarkResolver.createBookmark(for: url) else { return }
+            // Свежий bookmark в текущей сессии (см. registerSessionURL).
+            BookmarkResolver.registerSessionURL(url, forBookmark: bookmark)
+            let newName = url.lastPathComponent
+
+            await MainActor.run {
+                self?.mutate { project in
+                    project.slides[index].bookmarkData = bookmark
+                    project.slides[index].displayName = newName
+                }
+            }
         }
     }
 

@@ -119,14 +119,22 @@ struct ProjectPropertiesView: View {
         panel.message = L10n.text(.chooseAudioFile)
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
-        guard let bookmark = try? BookmarkResolver.createBookmark(for: url) else { return }
-        // Свежий bookmark в текущей сессии (см. registerSessionURL).
-        BookmarkResolver.registerSessionURL(url, forBookmark: bookmark)
-        let ref = MediaAudioReference(bookmarkData: bookmark, displayName: url.lastPathComponent)
-        musicName = ref.displayName
+        let displayName = url.lastPathComponent
+        // Создание security-scoped bookmark может заблокироваться на
+        // медленных/сетевых томах — выполняем в фоне, чтобы окно свойств
+        // не «зависало» с бесконечным спиннером после выбора файла.
+        Task.detached(priority: .userInitiated) {
+            guard let bookmark = try? BookmarkResolver.createBookmark(for: url) else { return }
+            // Свежий bookmark в текущей сессии (см. registerSessionURL).
+            BookmarkResolver.registerSessionURL(url, forBookmark: bookmark)
+            let ref = MediaAudioReference(bookmarkData: bookmark, displayName: displayName)
 
-        store.mutate { project in
-            project.music.source = .userFile(ref)
+            await MainActor.run {
+                self.musicName = displayName
+                self.store.mutate { project in
+                    project.music.source = .userFile(ref)
+                }
+            }
         }
     }
 
