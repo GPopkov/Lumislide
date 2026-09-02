@@ -147,12 +147,15 @@ public enum SlideImageCompositor {
 
     /// Прямоугольник Ken Burns в пиксельных координатах холста,
     /// интерполированный на момент времени слайда (0...1).
+    ///
+    /// Траектория задана в нормализованных координатах с origin ВВЕРХУ-СЛЕВА,
+    /// а CIImage использует origin ВНИЗУ-СЛЕВА — инвертируем Y.
     private static func trajectoryRectForTime(_ trajectory: KenBurnsTrajectory, canvasRect: CGRect, progress: Double) -> CGRect {
         let clamped = min(max(progress, 0), 1)
         let normalized = trajectory.rect(atTime: clamped)
         return CGRect(
             x: normalized.origin.x * canvasRect.width,
-            y: normalized.origin.y * canvasRect.height,
+            y: (1.0 - normalized.maxY) * canvasRect.height,
             width: normalized.width * canvasRect.width,
             height: normalized.height * canvasRect.height
         )

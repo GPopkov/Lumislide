@@ -1,6 +1,7 @@
 import Foundation
 import AVFoundation
 import CoreImage
+import ImageIO
 import SlideStoryModel
 
 /// Ошибки работы с видео-источниками.
@@ -151,7 +152,10 @@ public enum SlideContextFactory {
         case .photo:
             // Доступ нужен только на время чтения изображения — после
             // загрузки CIImage держатель можно отпустить.
-            guard let image = CIImage(contentsOf: url) else {
+            // ВАЖНО: загружаем фото с применённой EXIF-ориентацией (upright),
+            // чтобы координаты лиц (детекция в том же пространстве) совпадали
+            // с пикселями при рендере.
+            guard let image = Self.loadUprightPhoto(at: url) else {
                 throw BookmarkError.fileUnavailable(reference.displayName)
             }
             let source = FrameSource.photo(image)
@@ -174,5 +178,29 @@ public enum SlideContextFactory {
     /// Кэш доступности: возвращает false, если файл недоступен.
     public static func isFileAvailable(_ reference: MediaReference) -> Bool {
         MediaResolver.isAvailable(reference)
+    }
+
+    /// Загружает фото в upright-пространстве: EXIF-ориентация применена,
+    /// extent соответствует «как показывает пользователь». Полный размер.
+    static func loadUprightPhoto(at url: URL) -> CIImage? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+            return CIImage(contentsOf: url)
+        }
+        guard let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.doubleValue,
+              let height = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.doubleValue,
+              width > 0, height > 0 else {
+            return CIImage(contentsOf: url)
+        }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: max(width, height),
+            kCGImageSourceShouldCacheImmediately: true,
+        ]
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            return CIImage(contentsOf: url)
+        }
+        return CIImage(cgImage: cgImage)
     }
 }

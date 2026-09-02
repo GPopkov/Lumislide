@@ -166,6 +166,8 @@ public final class ProjectsStore: ObservableObject {
         isDirty = false
         lastSavedName = project.name
         reloadProjects()
+        // Старые проекты: кэши лиц в устаревшей системе координат — пересчёт.
+        refreshStaleFaceRegions(in: project)
     }
 
     /// Удаляет проект с диска (и из списка, если открыт).
@@ -441,13 +443,16 @@ public final class ProjectsStore: ObservableObject {
     }
 
     /// Детектирует лица на фото-слайде в фоне и сохраняет результат
-    /// в `MediaReference.faceRegions` (кэш, не пересчитывается на экспорте).
+    /// в `MediaReference.faceRegions` (кэш). Координаты — в upright-пространстве
+    /// (с учётом EXIF-ориентации). Пересчитывается, если кэш устарел
+    /// (эпоха ≠ текущей) или пуст.
     /// - Parameter slideID: id слайда.
     public func precomputeFaces(for slideID: UUID) {
         guard let project = currentProject,
               let slide = project.slides.first(where: { $0.id == slideID }),
               slide.kind == .photo,
-              slide.faceRegions.isEmpty else { return }
+              slide.faceRegions.isEmpty || slide.faceRegionsEpoch != MediaReference.currentFaceRegionsEpoch
+        else { return }
 
         let id = slideID
         let reference = slide
@@ -465,7 +470,19 @@ public final class ProjectsStore: ObservableObject {
             Task { @MainActor in
                 self?.updateSlide(id: id) { slide in
                     slide.faceRegions = regions
+                    slide.faceRegionsEpoch = MediaReference.currentFaceRegionsEpoch
                 }
+            }
+        }
+    }
+
+    /// Пересчитывает устаревшие кэши лиц для открытого проекта (старые
+    /// проекты до перехода на upright-координаты). Вызывается после открытия.
+    private func refreshStaleFaceRegions(in project: SlideshowProject) {
+        guard project.isKenBurnsEnabled else { return }
+        for slide in project.slides where slide.kind == .photo && !slide.isKenBurnsDisabled {
+            if slide.faceRegions.isEmpty || slide.faceRegionsEpoch != MediaReference.currentFaceRegionsEpoch {
+                precomputeFaces(for: slide.id)
             }
         }
     }

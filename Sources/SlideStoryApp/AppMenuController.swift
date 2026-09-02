@@ -17,6 +17,9 @@ final class AppMenuController: NSObject {
     /// Последнее установленное нами меню (для защиты от перезаписи SwiftUI).
     private var currentMainMenu: NSMenu?
     private var observers: [NSObjectProtocol] = []
+    /// Watchdog: SwiftUI может перезаписать mainMenu в ЛЮБОЙ момент (не только
+    /// при запуске) — периодически возвращаем своё меню.
+    private var watchdog: Timer?
 
     /// Подключает store/settings и подписывается на смену языка.
     /// Меню устанавливается в `install()` (после запуска NSApplication).
@@ -61,6 +64,17 @@ final class AppMenuController: NSObject {
                 self?.assertOwnMenu()
             }
         }
+
+        // Постоянный «сторожевой» таймер: SwiftUI может подменить mainMenu
+        // в любой момент (смена сцены, активация, открытие Settings и т.п.),
+        // причём ПОСЛЕ наших обработчиков тех же событий. Проверка раз в
+        // секунду (сравнение ссылок — дёшево) гарантированно возвращает меню.
+        let watchdog = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
+            self?.assertOwnMenu()
+        }
+        watchdog.tolerance = 0.2
+        RunLoop.main.add(watchdog, forMode: .common)
+        self.watchdog = watchdog
     }
 
     /// Если mainMenu сейчас НЕ наш (его перезаписал SwiftUI) — возвращаем своё.

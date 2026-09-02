@@ -50,29 +50,60 @@ public enum KenBurnsPlanner {
         duration: Double,
         faceRegions: [FaceRegion]
     ) -> KenBurnsTrajectory {
-        let interestPoint: CGPoint
+        // Лица — приоритет: явный фокус на объединение лиц (а не центр кадра).
         if let union = FaceRegion.union(of: faceRegions) {
-            // Центр объединяющего прямоугольника лиц.
-            interestPoint = CGPoint(
-                x: union.x + union.width / 2,
-                y: union.y + union.height / 2
-            )
-        } else {
-            interestPoint = ruleOfThirds(seed: seed, slideIndex: slideIndex)
+            return faceFocusTrajectory(seed: seed, slideIndex: slideIndex, duration: duration, union: union)
         }
 
+        // Без лиц — правило третей (детерминированно по seed).
+        let interestPoint = ruleOfThirds(seed: seed, slideIndex: slideIndex)
         let direction = directionVector(seed: seed, slideIndex: slideIndex)
         let scale = scaleRange(seed: seed, slideIndex: slideIndex)
-
-        // Прямоугольники строим так, чтобы точка интереса оставалась
-        // видимой в обоих состояниях движения.
         let startRect = rect(center: interestPoint, scale: scale.start)
         let endRect = rect(center: interestPoint, scale: scale.end, direction: direction)
-
-        // Нормализация: прямоугольники не должны выходить за границы кадра.
         return KenBurnsTrajectory(
             startRect: clamped(startRect),
             endRect: clamped(endRect),
+            duration: max(duration, 0.1)
+        )
+    }
+
+    /// Траектория с фокусом на лица: движение от полного кадра к кадру,
+    /// в котором объединение лиц отцентрировано с запасом. Координаты —
+    /// нормализованные (top-left) в пространстве ХОЛСТА (0...1), куда уже
+    /// спроецированы лица с учётом aspect-fit изображения.
+    private static func faceFocusTrajectory(
+        seed: UInt64,
+        slideIndex: Int,
+        duration: Double,
+        union: FaceRegion
+    ) -> KenBurnsTrajectory {
+        let margin: Double = 0.15
+        let minSide: Double = 0.5    // не приближаем сильнее ~2x
+        let maxSide: Double = 0.85   // не слабее ~1.18x (чтобы движение было заметно)
+        var side = max(union.width, union.height) + margin * 2
+        side = min(max(side, minSide), maxSide)
+
+        let direction = directionVector(seed: seed, slideIndex: slideIndex)
+        // Лёгкий детерминированный сдвиг, чтобы движение не было «статичным».
+        let jitter = side * 0.05
+        var centerX = union.x + union.width / 2 + direction.dx * jitter
+        var centerY = union.y + union.height / 2 + direction.dy * jitter
+        // Кадр не должен выходить за границы (0...1).
+        centerX = min(max(centerX, side / 2), 1 - side / 2)
+        centerY = min(max(centerY, side / 2), 1 - side / 2)
+
+        let endRect = clamped(CGRect(
+            x: centerX - side / 2,
+            y: centerY - side / 2,
+            width: side,
+            height: side
+        ))
+        // Старт — весь кадр (контекст), затем движение к лицам.
+        let startRect = CGRect(x: 0, y: 0, width: 1, height: 1)
+        return KenBurnsTrajectory(
+            startRect: startRect,
+            endRect: endRect,
             duration: max(duration, 0.1)
         )
     }

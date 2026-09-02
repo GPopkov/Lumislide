@@ -71,6 +71,12 @@ public struct MediaReference: Codable, Identifiable, Equatable, Sendable {
     /// Устаревание кэша при замене файла на диске — осознанное ограничение v1.
     public var faceRegions: [FaceRegion]
 
+    /// Версия/эпоха алгоритма детекции лиц. Нужна для инвалидации старых
+    /// кэшей: координаты лиц всегда хранятся в «выпрямленном» (upright)
+    /// пространстве пикселей с учётом EXIF-ориентации. Значения старых
+    /// версий (nil/0/1) считаются устаревшими и пересчитываются.
+    public var faceRegionsEpoch: Int?
+
     /// Кэш длительности видео-слайда (секунды), заполняется рендерером.
     public var cachedVideoDuration: Double?
 
@@ -78,6 +84,10 @@ public struct MediaReference: Codable, Identifiable, Equatable, Sendable {
     /// В этом случае `bookmarkData` не используется: контент экспортируется
     /// во временный файл в момент предпросмотра/экспорта (без копий).
     public var photosLocalIdentifier: String?
+
+    /// Текущая «эпоха» детекции лиц (инвалидирует старые кэши координат).
+    /// Единый источник истины для приложения и рендерера.
+    public static let currentFaceRegionsEpoch = 2
 
     public init(
         id: UUID = UUID(),
@@ -88,6 +98,7 @@ public struct MediaReference: Codable, Identifiable, Equatable, Sendable {
         titleOverlay: TitleOverlay? = nil,
         isKenBurnsDisabled: Bool = false,
         faceRegions: [FaceRegion] = [],
+        faceRegionsEpoch: Int? = nil,
         cachedVideoDuration: Double? = nil,
         photosLocalIdentifier: String? = nil
     ) {
@@ -99,6 +110,7 @@ public struct MediaReference: Codable, Identifiable, Equatable, Sendable {
         self.titleOverlay = titleOverlay
         self.isKenBurnsDisabled = isKenBurnsDisabled
         self.faceRegions = faceRegions
+        self.faceRegionsEpoch = faceRegionsEpoch
         self.cachedVideoDuration = cachedVideoDuration
         self.photosLocalIdentifier = photosLocalIdentifier
     }

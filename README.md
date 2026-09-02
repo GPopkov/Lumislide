@@ -1,264 +1,191 @@
 # Lumislide
 
-**Lumislide** is a native macOS app for building slideshows from your photos and videos.
-Add media files, arrange them in the grid, and the app assembles a video: automatic
-transitions, Ken Burns effect, background music, titles — then export to **H.264 / H.265**.
+**Lumislide** — нативное приложение для macOS, которое собирает слайд-шоу из ваших
+фото и видео и сохраняет его в MP4. Добавляйте файлы, расставляйте карточки в сетке —
+приложение само склеит ролик: переходы, эффект Кена Бёрнса, титры, фоновая музыка.
 
-> Requirements: **macOS 15.0+ (Sequoia)**, **Apple Silicon only** (no Intel support).
+> Требования: **macOS 15 (Sequoia) или новее**, компьютер **на Apple Silicon (M1+)**.
 
 ---
 
 ## English
 
-### Overview
+### What is Lumislide?
 
-Lumislide has **no built-in media library**. Your photos and videos are never imported
-or copied — the project stores only security-scoped bookmarks (references) to the original
-files, which are read on the fly during preview and export. Everything works inside the
-macOS sandbox.
+A native macOS app that turns your photos and videos into an MP4 slideshow.
 
-### Features
+- Your files are **never imported or copied**: Lumislide keeps only references
+  (sandboxed bookmarks) to the originals and reads them on the fly.
+- No timeline to learn: the **card order in the grid equals the order in the video**.
+  Drag cards to reorder.
+- Everything is automatic by default — Lumislide picks transitions, applies the
+  Ken Burns effect and (if it finds faces) focuses the motion on the faces.
 
-- **Drag & drop grid editor** — reorder slides by dragging cards (`NSCollectionView`).
-- **11 transitions** between slides:
-  - Core Image: dissolve, slide left, slide right, push left, push right, iris open,
-    iris close, dip to black;
-  - Custom Metal kernels: door, grid, flash.
-- **Auto intro/outro** — every new project starts with a black title slide (project name)
-  and ends with a black outro («The End»).
-- **Localized app menu & Help** — the main menu (File/Edit/…) and a built-in help window
-  follow the in-app language.
-  - Transitions are applied **automatically and deterministically** (project seed), or
-    forced per slide via right-click.
-- **Ken Burns effect** on photos — slow zoom/pan with a **face-aware focus point**
-  (Vision `VNDetectFaceRectanglesRequest`, bounding box only, fully on-device).
-- **Titles** — text overlay per photo (font size, color, position: top/center/bottom).
-- **Background music** — attach your own audio file (by reference, not imported).
-  Music plays only during photo slides (2 s fades around videos); video slides keep
-  their **own audio track**.
-- **Aspect ratios** 16:9, 4:3, 9:16, 1:1. No cropping: media is fitted and the empty space
-  is filled with a blurred, stretched copy of the same image.
-- **Photos library** — add content from the Photos app directly. The macOS picker does not
-  expose file paths or library references, so the selected items are imported into the
-  app's storage (`Application Support`) and referenced like regular media.
-- **Live preview window** — same render pipeline as export, at reduced resolution.
-  Closes with **Esc** (all windows do).
-- **Export** to MP4 (H.264 or H.265), configurable resolution / frame rate / quality,
-  with progress, cancellation and an **estimated output file size**.
-- **Thumbnail size slider** in the main toolbar (persisted).
-- **Localization**: English / Russian.
+### Main features
+
+- **Media**: JPEG, HEIC, PNG photos; MOV/MP4 videos. Add files with “Add media”
+  or pick from your **Photos library**.
+- **Auto intro & outro**: every new project begins with a title slide (project name)
+  and ends with a black “The End” slide.
+- **11 transitions**, applied automatically and deterministically; you can force a
+  specific transition per slide (right-click a card).
+- **Ken Burns** slow zoom/pan on photos with **face-aware focus**.
+- **Titles** on photos: text, size, color, position.
+- **Background music** on photo intervals (2 s fade around videos); video slides
+  keep their own audio.
+- **Aspect ratios**: 16:9, 4:3, 9:16, 1:1. Media is fitted (no cropping); empty
+  space is filled with a blurred copy of the same image.
+- **Live preview** window — the same pipeline as export, at lower resolution.
+- **Export** to MP4 (H.264 or H.265) with configurable resolution / frame rate /
+  quality, progress, cancellation and an estimated output size.
+- **Localization**: English and Russian (the main menu and Help follow the language).
 
 ### Requirements
 
-- macOS 15.0 or later
+- macOS 15.0 or newer (Sequoia)
 - Apple Silicon (M1 or newer)
-- Xcode (for building and running the tests) — Command Line Tools alone are not enough
-  for `swift test` (XCTest)
 
-### Build & run
+### Download & install
 
-```bash
-export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer   # if CLT is active
-swift build
-swift test
-swift run Lumislide
-```
+1. Download the latest release from the **Releases** page:
+   [github.com/GPopkov/Lumislide/releases](https://github.com/GPopkov/Lumislide/releases)
+   — file `Lumislide-<version>.zip`.
+2. Unzip and move **Lumislide.app** to your `Applications` folder.
+3. First launch: the app is distributed without App Store notarization, so macOS
+   may block it. Right-click the app → **Open** → **Open** (once). Afterwards it
+   launches normally.
 
-### Project structure
+> Or build it yourself from source — see
+> [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) (Russian, with a short English summary).
 
-Three independent Swift modules (Swift Package Manager):
+### Quick start
 
-| Module | Path | Purpose |
-|---|---|---|
-| `SlideStoryModel` | `Sources/SlideStoryModel` | Codable project model, `.slideshow` file store, security-scoped bookmark resolver — no UI / rendering dependencies |
-| `SlideStoryRenderer` | `Sources/SlideStoryRenderer` | Render pipeline: Ken Burns, transitions (CI + Metal), video frames, exporter, audio mixer |
-| `SlideStoryApp` | `Sources/SlideStoryApp` | UI layer: SwiftUI + AppKit (thumbnail grid via `NSCollectionView`), windows, view models |
+1. **Create a project** — click **“+ Create”** in the left sidebar (a new project
+   already contains the intro and outro slides).
+2. **Add media** — toolbar **“Add media”** (choose files) or **“From Photos library”**.
+   The files appear between the intro and the outro.
+3. **Arrange** — drag cards to set the order; right-click a card to change its
+   transition, add a title or disable Ken Burns for it.
+4. **Project settings** — toolbar “Properties”: rename, photo/transition duration,
+   Ken Burns on/off, aspect ratio, background music.
+5. **Preview** — the play button runs the slideshow live.
+6. **Export** — “Export”: pick resolution/frame rate/quality, then wait for the MP4.
 
-### Architecture highlights
+### Where are my projects?
 
-1. **No media library** — files are referenced via security-scoped bookmarks and read
-   only during preview/export (works in sandbox and outside).
-2. **Slide order = grid order**; no separate timeline UI.
-3. **Deterministic randomness** — automatic transitions are seeded by the project
-   (`transitionSeed`, 64-bit, stored as a string in JSON); re-exporting an unchanged
-   project yields the identical result. Manual per-slide override via right-click.
-4. **No cropping** — `.fit` + blurred background fill for mismatched aspect ratios.
-5. **Ken Burns considers faces** — Vision bounding boxes only, no identity detection.
-6. **Music on photo intervals only** (2 s fade around video slides), looped/trimmed to
-   the slideshow duration; video slides keep their own audio.
+Projects are saved as `.slideshow` files in **`~/Lumislide Projects`**
+(inside the app’s sandbox container on macOS). Each project stores only references
+to your media — the files themselves stay where they are.
 
-### Release build (.app)
+### FAQ
 
-```bash
-# Mac App Store (sandbox signing)
-./Scripts/build_app.sh mas
+- **“Lumislide can’t be opened because it is from an unidentified developer”**
+  → right-click the app → Open → Open. The app is ad-hoc signed and sandboxed;
+  you can remove the quarantine flag with
+  `xattr -d com.apple.quarantine /Applications/Lumislide.app`.
+- **Photos are shown sideways / the app needs access to a file?** → the app asks
+  for access when you add files; if a file was moved, right-click its card →
+  “Relink file”.
+- **Can I use music from Apple Music / streaming?** Only local audio files are
+  supported (MP3, WAV, AIFF, AAC, FLAC).
+- **The video looks blurry around photos with a different aspect ratio** — that is
+  intentional: media is fitted and the bars are filled with a blurred copy.
 
-# Direct distribution (sandbox + hardened runtime)
-./Scripts/build_app.sh direct
+### Documentation
 
-# Notarization (direct channel)
-APPLE_ID="you@example.com" APPLE_PASSWORD="xxxx-xxxx-xxxx" \
-    ./Scripts/notarize.sh dist/Lumislide.app
-```
-
-The result is `dist/Lumislide.app`. Requires an Apple Development identity
-(Xcode → Settings → Accounts).
-
-### Supported formats
-
-| Kind | Formats |
-|---|---|
-| Photos | JPEG, HEIC, PNG |
-| Videos | MOV, MP4 (H.264/H.265) |
-| Export | MP4 container, H.264 or H.265 |
-| Project file | `.slideshow` (JSON) |
-| Music | MP3, WAV, AIFF, AAC, FLAC |
-
-### Testing
-
-`swift test` runs the full suite: model tests (timeline, transitions, Ken Burns,
-bookmarks, music intervals), renderer tests (export, video frames, face detection),
-and app tests (localization, settings, import).
-
-### Known limitations (v1)
-
-- Video frames are extracted with `AVAssetImageGenerator` with per-frame seeking —
-  a bottleneck on long/high-fps video slides (planned replacement: `AVAssetReader`).
-- The blurred background fill for video slides is recomputed every frame
-  (photos: computed once and cached).
-- Face detection may run on the fly during export if not cached in the project file.
-- Watch-folder mode is modeled in the data layer (`watchFolderBookmark`) but has no UI yet.
-- The built-in music library is not shipped in v1 (only user-provided music);
-  bundled tracks require redistribution-compatible licensing.
+- [Technical documentation (RU)](docs/TECHNICAL.md) — architecture, project file
+  format, render pipeline, Ken Burns & coordinates, transitions, audio, testing.
+- [Development guide (RU)](docs/DEVELOPMENT.md) — building and testing from source.
 
 ---
 
+<!--RU-->
+
 ## На русском
 
-### Обзор
+### Что такое Lumislide?
 
-**Lumislide** — нативное macOS-приложение для сборки слайдшоу из ваших фото и видео.
-Добавьте медиафайлы, расположите их в сетке — приложение само соберёт видео:
-автоматические переходы, эффект Кена Бёрнса, фоновая музыка, титры — и экспортирует
-результат в **H.264 / H.265**.
+Нативное приложение для macOS, которое превращает ваши фото и видео в MP4-слайд-шоу.
 
-> Требования: **macOS 15.0+ (Sequoia)**, **только Apple Silicon** (Intel не поддерживается).
+- Файлы **не импортируются и не копируются**: приложение хранит только ссылки
+  (security-scoped bookmarks) и читает оригиналы на лету.
+- Никакого таймлайна: **порядок карточек в сетке = порядок в ролике**. Перетаскивайте
+  карточки, чтобы изменить последовательность.
+- Всё автоматически по умолчанию — приложение само выбирает переходы, применяет
+  эффект Кена Бёрнса и (если находит лица) **наводит движение на лица**.
 
 ### Возможности
 
-- **Редактор-сетка с drag & drop** — порядок слайдов меняется перетаскиванием карточек
-  (`NSCollectionView`).
-- **11 переходов** между слайдами:
-  - Core Image: растворение, скольжение влево/вправо, сдвиг влево/вправо,
-    открытие/закрытие круга, затемнение;
-  - кастомные Metal-кернелы: дверь, сетка, вспышка.
-- **Авто Intro/Outro** — каждый новый проект начинается чёрным титульным слайдом
-  (название проекта) и заканчивается чёрным слайдом («Конец»).
-- **Локализованные меню и справка** — главное меню (Файл/Правка/…) и встроенное окно
-  справки следуют языку интерфейса.
-  - Переходы назначаются **автоматически и детерминированно** (seed проекта) либо
-    принудительно для конкретного слайда через ПКМ.
-- **Эффект Кена Бёрнса** на фото — медленный зум/панорама с **учётом лиц**
-  (Vision `VNDetectFaceRectanglesRequest`, только bounding box, полностью on-device).
-- **Титры** — текстовая накладка на фото (размер шрифта, цвет, позиция: сверху/по центру/снизу).
-- **Фоновая музыка** — подключение собственного аудиофайла по ссылке (без импорта).
-  Музыка звучит только на фото-слайдах (fade 2 c вокруг видео); на видео-слайдах
-  звучит **собственная звуковая дорожка** видео.
-- **Соотношения сторон** 16:9, 4:3, 9:16, 1:1. Обрезка не применяется: медиа вписывается
-  целиком, пустое пространство заполняется размытой растянутой копией того же кадра.
-- **Медиатека Фото** — добавление контента из приложения «Фото» напрямую. Пикер macOS не
-  отдаёт прямых путей к файлам/ссылкам на медиатеку, поэтому выбранные элементы
-  импортируются в хранилище приложения (Application Support) и используются как обычное медиа.
-- **Окно предпросмотра** — тот же рендер-пайплайн, что и при экспорте, в пониженном
-  разрешении (живой рендер кадров, play/pause, перемотка, громкость). Закрывается по **Esc**
-  (как и остальные окна).
-- **Экспорт** в MP4 (H.264 или H.265), настраиваемые разрешение / частота кадров /
-  качество, прогресс, отмена и **оценка размера итогового файла**.
-- **Ползунок размера миниатюр** в тулбаре главного окна (сохраняется).
-- **Локализация**: русский / английский.
+- **Медиа**: фото JPEG, HEIC, PNG; видео MOV/MP4. Добавление файлов кнопкой
+  «Добавить медиа» или выбор из **медиатеки Фото**.
+- **Авто-Intro и Outro**: каждый новый проект начинается титульным слайдом
+  (название проекта) и заканчивается чёрным слайдом «Конец».
+- **11 переходов** — подбираются автоматически и детерминированно; для конкретного
+  слайда можно задать свой (ПКМ по карточке).
+- **Кен Бёрнс** — медленный зум/панорама с **фокусом на лица**.
+- **Титры** на фото: текст, размер, цвет, положение.
+- **Фоновая музыка** на фото-интервалах (fade 2 c вокруг видео); на видео-слайдах
+  остаётся собственная звуковая дорожка.
+- **Пропорции кадра**: 16:9, 4:3, 9:16, 1:1. Медиа вписывается без обрезки;
+  пустые поля заполняются размытой копией того же изображения.
+- **Окно предпросмотра** — тот же конвейер, что и при экспорте, в пониженном
+  разрешении.
+- **Экспорт** в MP4 (H.264 или H.265): разрешение / частота кадров / качество,
+  прогресс, отмена и оценка размера файла.
+- **Локализация**: русский и английский (меню и справка следуют языку).
 
-### Требования
+### Системные требования
 
-- macOS 15.0 или новее
+- macOS 15.0 или новее (Sequoia)
 - Apple Silicon (M1 и новее)
-- Xcode (для сборки и тестов) — Command Line Tools недостаточно для `swift test` (XCTest)
 
+### Скачать и установить
 
-### Сборка и запуск
+1. Скачайте последний релиз со страницы **Releases**:
+   [github.com/GPopkov/Lumislide/releases](https://github.com/GPopkov/Lumislide/releases)
+   — файл `Lumislide-<версия>.zip`.
+2. Распакуйте и переместите **Lumislide.app** в папку `Программы`.
+3. Первый запуск: приложение распространяется без нотаризации App Store, поэтому
+   macOS может его заблокировать. Нажмите на приложение **правой кнопкой** →
+   **«Открыть»** → **«Открыть»** (один раз). Дальше оно запускается как обычно.
 
-```bash
-export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer   # если активны CLT
-swift build
-swift test
-swift run Lumislide
-```
+> Либо соберите из исходников — см.
+> [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
-### Структура проекта
+### Быстрый старт
 
-Три независимых Swift-модуля (Swift Package Manager):
+1. **Создайте проект** — кнопка **«+ Создать»** в левой колонке (в новом проекте
+   уже есть Intro и Outro-слайды).
+2. **Добавьте медиа** — в тулбаре **«Добавить медиа»** (выбор файлов) или
+   **«Из медиатеки Фото»**. Файлы встанут между Intro и Outro.
+3. **Расставьте порядок** — перетаскивайте карточки; ПКМ по карточке: сменить
+   переход, добавить титр или отключить Кена Бёрнса.
+4. **Свойства проекта** — тулбар «Свойства»: название, длительность фото/переходов,
+   Кен Бёрнс вкл/выкл, пропорции, фоновая музыка.
+5. **Предпросмотр** — кнопка «Просмотр» запускает слайд-шоу вживую.
+6. **Экспорт** — «Экспорт»: выберите разрешение/частоту кадров/качество и дождитесь MP4.
 
-| Модуль | Путь | Назначение |
-|---|---|---|
-| `SlideStoryModel` | `Sources/SlideStoryModel` | Codable-модель проекта, файл `.slideshow`, резолвер security-scoped bookmarks — без зависимостей от UI и рендеринга |
-| `SlideStoryRenderer` | `Sources/SlideStoryRenderer` | Рендер-пайплайн: Ken Burns, переходы (CI + Metal), видео-кадры, экспортёр, аудио-микшер |
-| `SlideStoryApp` | `Sources/SlideStoryApp` | UI-слой: SwiftUI + AppKit (сетка миниатюр через `NSCollectionView`), окна, view-model'и |
+### Где хранятся проекты?
 
+Проекты сохраняются как файлы `.slideshow` в папке **`~/Lumislide Projects`**
+(в песочнице приложения). В проекте — только ссылки на медиа; сами файлы остаются
+на своих местах.
 
-### Ключевые архитектурные решения
+### Частые вопросы
 
-1. **Нет медиатеки** — фото/видео не импортируются, хранятся только security-scoped
-   bookmarks; файлы читаются в момент предпросмотра/экспорта (работает и в sandbox, и вне его).
-2. **Порядок слайдов = порядок карточек в сетке**; отдельного таймлайна в UI нет.
-3. **Детерминированная случайность** — автоматические переходы задаются seed проекта
-   (`transitionSeed`, 64-бит, строкой в JSON); повторный экспорт без изменений даёт
-   идентичный результат. Ручной override — через ПКМ.
-4. **Обрезка не применяется** — `.fit` + размытая заливка фона при несовпадении пропорций.
-5. **Ken Burns учитывает лица** — Vision, только bounding box, без идентификации личности.
-6. **Музыка только на фото-интервалах** (fade 2 c вокруг видео), зацикливается/обрезается
-   под длительность; на видео-слайдах — собственная дорожка видео.
+- **«Lumislide нельзя открыть, так как оно от неизвестного разработчика»**
+  → правая кнопка по приложению → «Открыть» → «Открыть». Приложение подписано
+  ad-hoc и работает в песочнице; снять пометку карантина можно командой
+  `xattr -d com.apple.quarantine /Applications/Lumislide.app`.
+- **Фото повёрнуто / приложение не видит файл?** → доступ запрашивается при
+  добавлении файлов; если файл переместили — ПКМ по карточке → «Переподключить файл».
+- **Можно ли музыку из Apple Music/стриминга?** Только локальные аудиофайлы
+  (MP3, WAV, AIFF, AAC, FLAC).
+- **Почему по краям видео размытие?** Это задумано: медиа вписывается целиком,
+  а пустые поля заполняются размытой копией.
 
+### Документация
 
-### Релизная сборка (.app)
-
-```bash
-# Mac App Store (sandbox-подпись)
-./Scripts/build_app.sh mas
-
-# Прямое распространение (sandbox + hardened runtime)
-./Scripts/build_app.sh direct
-
-# Notarization (direct-канал)
-APPLE_ID="you@example.com" APPLE_PASSWORD="xxxx-xxxx-xxxx" \
-    ./Scripts/notarize.sh dist/Lumislide.app
-```
-
-Результат — `dist/Lumislide.app`. Требуется Apple Development identity
-(Xcode → Settings → Accounts).
-
-### Форматы
-
-| Тип | Форматы |
-|---|---|
-| Фото | JPEG, HEIC, PNG |
-| Видео | MOV, MP4 (H.264/H.265) |
-| Экспорт | MP4-контейнер, H.264 или H.265 |
-| Файл проекта | `.slideshow` (JSON) |
-| Музыка | MP3, WAV, AIFF, AAC, FLAC |
-
-
-### Тесты
-
-`swift test` запускает полный набор: тесты модели (таймлайн, переходы, Ken Burns,
-bookmarks, интервалы музыки), рендерера (экспорт, видео-кадры, детекция лиц)
-и приложения (локализация, настройки, импорт).
-
-### Известные ограничения v1
-
-- Кадры видео извлекаются через `AVAssetImageGenerator` с повторным seek — узкое место
-  на длинных видео-слайдах с высоким fps (план: замена на `AVAssetReader`).
-- Размытая заливка для видео пересчитывается на каждый кадр (для фото — один раз и кэш).
-- Детекция лиц может выполняться «на лету» при экспорте, если не закэширована в проекте.
-- Watch-folder заложен в модели данных (`watchFolderBookmark`), UI в v1 не реализован.
-- Встроенная библиотека музыкальных треков в v1 не поставляется (только пользовательская
-  музыка); встроенные треки требуют лицензии на распространение.
-
+- [Техническая документация](docs/TECHNICAL.md) — архитектура, формат файла проекта,
+  конвейер рендера, Ken Burns и координаты, переходы, аудио, тесты.
+- [Руководство разработчика](docs/DEVELOPMENT.md) — сборка и тесты из исходников.

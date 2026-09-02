@@ -188,11 +188,21 @@ public final class TimelineFrameRenderer: @unchecked Sendable {
         let isKBEnabled = project.isKenBurnsEnabled && !slide.isKenBurnsDisabled
         let trajectory: KenBurnsTrajectory?
         if isKBEnabled {
+            // Лица учитываем только из актуального (upright) кэша детекции.
+            let validFaces = (slide.faceRegionsEpoch == MediaReference.currentFaceRegionsEpoch)
+                ? slide.faceRegions : []
+            // Координаты лиц — в пространстве ИЗОБРАЖЕНИЯ; планировщик работает
+            // в пространстве ХОЛСТА (с учётом aspect-fit полосы) — проецируем.
+            let canvasFaces = Self.mapFacesToCanvas(
+                validFaces,
+                imageSize: image.extent.size,
+                canvasSize: configuration.canvasSize
+            )
             trajectory = KenBurnsPlanner.trajectory(
                 seed: project.transitionSeedValue,
                 slideIndex: slideIndex,
                 duration: project.defaultPhotoDuration,
-                faceRegions: slide.faceRegions
+                faceRegions: canvasFaces
             )
         } else {
             trajectory = nil
@@ -207,6 +217,37 @@ public final class TimelineFrameRenderer: @unchecked Sendable {
             progress: localTime
         )
         return composited.image
+    }
+
+    /// Проецирует координаты лиц из пространства изображения (top-left,
+    /// upright, 0...1) в пространство холста с учётом aspect-fit полосы.
+    /// Холст симметричен по вертикали — смещение по Y одинаково для top/bottom.
+    static func mapFacesToCanvas(
+        _ faces: [FaceRegion],
+        imageSize: CGSize,
+        canvasSize: CGSize
+    ) -> [FaceRegion] {
+        guard !faces.isEmpty,
+              imageSize.width > 0, imageSize.height > 0,
+              canvasSize.width > 0, canvasSize.height > 0 else { return [] }
+        let scale = min(canvasSize.width / imageSize.width,
+                        canvasSize.height / imageSize.height)
+        let fitW = imageSize.width * scale
+        let fitH = imageSize.height * scale
+        let offsetX = (canvasSize.width - fitW) / 2
+        let offsetY = (canvasSize.height - fitH) / 2
+
+        func mapX(_ x: Double) -> Double { Double((offsetX + x * fitW) / canvasSize.width) }
+        func mapY(_ y: Double) -> Double { Double((offsetY + y * fitH) / canvasSize.height) }
+
+        return faces.map { face in
+            FaceRegion(
+                x: mapX(face.x),
+                y: mapY(face.y),
+                width: Double(face.width * fitW / canvasSize.width),
+                height: Double(face.height * fitH / canvasSize.height)
+            )
+        }
     }
 
     private func renderVideo(

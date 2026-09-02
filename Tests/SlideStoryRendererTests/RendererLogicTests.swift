@@ -79,12 +79,74 @@ final class RendererLogicTests: XCTestCase {
         XCTAssertEqual(middle.width, (start.width + end.width) / 2, accuracy: 0.001)
     }
 
-    func testKenBurnsFaceCentersInterestPoint() {
-        // Лицо в левом нижнем углу — точка интереса должна сместиться туда.
-        let face = [FaceRegion(x: 0.0, y: 0.0, width: 0.2, height: 0.2)]
+    func testKenBurnsFaceFocusesOnFace() {
+        // Лицо справа-снизу — траектория должна заканчиваться вблизи него,
+        // а не зумить по центру кадра.
+        let face = [FaceRegion(x: 0.7, y: 0.6, width: 0.2, height: 0.25)]
+        let unionCenter = CGPoint(x: 0.8, y: 0.725)
         let withFace = KenBurnsPlanner.trajectory(seed: 1, slideIndex: 0, duration: 5, faceRegions: face)
+
+        // Старт — весь кадр (контекст), затем зум к лицу.
+        XCTAssertEqual(withFace.startRect, CGRect(x: 0, y: 0, width: 1, height: 1))
+        // Конечный кадр центрирован на лице (с учётом clamp по краям).
+        let endCenter = CGPoint(x: withFace.endRect.midX, y: withFace.endRect.midY)
+        XCTAssertLessThan(abs(endCenter.x - unionCenter.x), 0.15,
+                          "Конец движения должен быть у лица по X")
+        XCTAssertLessThan(abs(endCenter.y - unionCenter.y), 0.15,
+                          "Конец движения должен быть у лица по Y")
+        XCTAssertTrue(withFace.endRect.contains(unionCenter),
+                      "Центр объединения лиц должен попадать в конечный кадр")
+        // Без лиц (правило третей) конечный центр иной — фокус реально работает.
         let withoutFace = KenBurnsPlanner.trajectory(seed: 1, slideIndex: 0, duration: 5, faceRegions: [])
-        XCTAssertNotEqual(withFace.startRect, withoutFace.startRect)
+        let thirdsCenter = CGPoint(x: withoutFace.endRect.midX, y: withoutFace.endRect.midY)
+        XCTAssertNotEqual(endCenter, thirdsCenter)
+    }
+
+    func testMapFacesToCanvasLandscapeImage() {
+        // Фото 3000×2250 (4:3) в холсте 1920×1080 (16:9): fit-полоса 1440×1080
+        // по центру по X. Лицо в левом верхнем углу изображения (0,0,0.1,0.1).
+        let mapped = TimelineFrameRenderer.mapFacesToCanvas(
+            [FaceRegion(x: 0.0, y: 0.0, width: 0.1, height: 0.1)],
+            imageSize: CGSize(width: 3000, height: 2250),
+            canvasSize: CGSize(width: 1920, height: 1080)
+        )
+        let face = mapped[0]
+        XCTAssertEqual(face.x, 240.0 / 1920.0, accuracy: 0.001)   // offsetX = (1920-1440)/2
+        XCTAssertEqual(face.y, 0.0, accuracy: 0.001)
+        XCTAssertEqual(face.width, 144.0 / 1920.0, accuracy: 0.001)
+        XCTAssertEqual(face.height, 0.1, accuracy: 0.001)
+    }
+
+    func testMapFacesToCanvasPortraitImage() {
+        // Портрет 2250×3000 в холсте 1920×1080: fit 810×1080 по центру.
+        let mapped = TimelineFrameRenderer.mapFacesToCanvas(
+            [FaceRegion(x: 0.5, y: 0.5, width: 0.1, height: 0.1)],
+            imageSize: CGSize(width: 2250, height: 3000),
+            canvasSize: CGSize(width: 1920, height: 1080)
+        )
+        let face = mapped[0]
+        XCTAssertEqual(face.x, 0.5, accuracy: 0.001)
+        XCTAssertEqual(face.y, 0.5, accuracy: 0.001)
+        XCTAssertEqual(face.width, 81.0 / 1920.0, accuracy: 0.001)
+        XCTAssertEqual(face.height, 0.1, accuracy: 0.001)
+    }
+
+    func testKenBurnsRectsWithinBoundsWithFaces() {
+        // Конечные кадры при лицах у краёв не выходят за границы (0...1).
+        let edgeFaces = [
+            FaceRegion(x: 0.0, y: 0.0, width: 0.12, height: 0.12),
+            FaceRegion(x: 0.88, y: 0.88, width: 0.12, height: 0.12),
+            FaceRegion(x: 0.0, y: 0.88, width: 0.1, height: 0.1),
+        ]
+        for face in edgeFaces {
+            let t = KenBurnsPlanner.trajectory(seed: 3, slideIndex: 1, duration: 5, faceRegions: [face])
+            for rect in [t.startRect, t.endRect] {
+                XCTAssertGreaterThanOrEqual(rect.minX, 0)
+                XCTAssertGreaterThanOrEqual(rect.minY, 0)
+                XCTAssertLessThanOrEqual(rect.maxX, 1.0001)
+                XCTAssertLessThanOrEqual(rect.maxY, 1.0001)
+            }
+        }
     }
 
     func testKenBurnsRectsWithinBounds() {
