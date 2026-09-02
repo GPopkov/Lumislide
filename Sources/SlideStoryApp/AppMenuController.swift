@@ -13,6 +13,7 @@ final class AppMenuController: NSObject {
     weak var store: ProjectsStore?
     weak var settings: AppSettings?
     private var cancellable: AnyCancellable?
+    private var builtLanguage: AppLanguage?
 
     /// Подключает store/settings и подписывается на смену языка.
     /// Меню устанавливается в `install()` (после запуска NSApplication).
@@ -21,13 +22,19 @@ final class AppMenuController: NSObject {
         self.settings = settings
         cancellable = settings.objectWillChange.sink { [weak self] _ in
             Task { @MainActor in
-                self?.rebuild()
+                guard let self, let current = self.settings?.language else { return }
+                // Пересобираем меню только при реальной смене языка.
+                if current != self.builtLanguage {
+                    self.builtLanguage = current
+                    self.rebuild()
+                }
             }
         }
     }
 
     /// Устанавливает меню (вызывается после запуска приложения).
     func install() {
+        builtLanguage = settings?.language
         rebuild()
     }
 
