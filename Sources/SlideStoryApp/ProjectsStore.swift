@@ -2,6 +2,7 @@ import Foundation
 import Combine
 import AppKit
 import UniformTypeIdentifiers
+import ImageIO
 import CoreTransferable
 #if canImport(_PhotosUI_SwiftUI)
 import _PhotosUI_SwiftUI
@@ -86,6 +87,11 @@ public final class ProjectsStore: ObservableObject {
             counter += 1
         }
 
+        // По умолчанию проект начинается с Intro (название) и заканчивается
+        // Outro («Конец»/«The End») — чёрный фон с титром.
+        let name = project.name
+        project.slides = Self.makeIntroOutroSlides(projectName: name)
+
         let store = ProjectStore(fileURL: fileURL)
         try? store.save(project)
 
@@ -93,6 +99,62 @@ public final class ProjectsStore: ObservableObject {
         currentProjectURL = store.fileURL
         isDirty = false
         reloadProjects()
+    }
+
+    /// Автослайды для нового проекта: чёрный фон с титром (Intro — название
+    /// проекта, Outro — «Конец»/«The End» по текущему языку интерфейса).
+    private static func makeIntroOutroSlides(projectName: String) -> [MediaReference] {
+        guard let blackURL = ensureBuiltinBlackImage(),
+              let bookmark = try? BookmarkResolver.createBookmark(for: blackURL) else {
+            return []
+        }
+        let endTitle = L10n.currentLanguage == .russian ? "Конец" : "The End"
+
+        func blackSlide(_ text: String) -> MediaReference {
+            MediaReference(
+                kind: .photo,
+                bookmarkData: bookmark,
+                displayName: blackURL.lastPathComponent,
+                titleOverlay: TitleOverlay(
+                    text: text,
+                    fontSize: 84,
+                    colorRGBA: SIMD4<Double>(1, 1, 1, 1),
+                    position: .center
+                ),
+                isKenBurnsDisabled: true
+            )
+        }
+        return [blackSlide(projectName), blackSlide(endTitle)]
+    }
+
+    /// Возвращает URL чёрного PNG (генерирует один раз в Application Support).
+    private static func ensureBuiltinBlackImage() -> URL? {
+        let fm = FileManager.default
+        let base = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? fm.temporaryDirectory
+        let directory = base.appendingPathComponent("Lumislide/Builtin", isDirectory: true)
+        try? fm.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appendingPathComponent("black.png")
+
+        guard !fm.fileExists(atPath: url.path) else { return url }
+
+        let size = CGSize(width: 1920, height: 1080)
+        guard let context = CGContext(
+            data: nil,
+            width: Int(size.width), height: Int(size.height),
+            bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        context.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 1))
+        context.fill(CGRect(origin: .zero, size: size))
+        guard let image = context.makeImage(),
+              let destination = CGImageDestinationCreateWithURL(
+                url as CFURL, "public.png" as CFString, 1, nil
+              ) else { return nil }
+        CGImageDestinationAddImage(destination, image, nil)
+        guard CGImageDestinationFinalize(destination) else { return nil }
+        return url
     }
 
     /// Открывает проект по URL.

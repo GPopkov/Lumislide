@@ -40,6 +40,15 @@ struct ProjectListView: View {
                             }
                             .contextMenu {
                                 Button(L10n.text(.open)) { store.openProject(at: url) }
+                                Button(L10n.text(.projectProperties)) {
+                                    // Свойства правят текущий проект — открываем его,
+                                    // затем показываем окно свойств.
+                                    store.openProject(at: url)
+                                    if let project = store.currentProject {
+                                        AppWindowsController.openProperties(project: project, store: store)
+                                    }
+                                }
+                                Divider()
                                 Button(L10n.text(.delete), role: .destructive) {
                                     store.deleteProject(at: url)
                                 }

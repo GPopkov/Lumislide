@@ -39,6 +39,12 @@ public enum L10n {
 
         // Настройки
         case settings, projectsFolder, defaultPhotoDuration, autosave, language
+
+        // Справка / меню
+        case help, lumislideHelp,
+             newProject, closeWindow, about, quit, hide, hideOthers, showAll, services,
+             undo, redo, cut, copy, paste, selectAll, minimize, zoom, bringAllToFront,
+             toggleFullScreen, fileMenu, editMenu, viewMenu, windowMenu
     }
 
     // MARK: - Переводы
@@ -118,6 +124,31 @@ public enum L10n {
             .defaultPhotoDuration: "Default Photo Duration",
             .autosave: "Autosave Projects",
             .language: "Language",
+
+            .help: "Help",
+            .lumislideHelp: "Lumislide Help",
+            .newProject: "New Project",
+            .closeWindow: "Close Window",
+            .about: "About Lumislide",
+            .quit: "Quit Lumislide",
+            .hide: "Hide Lumislide",
+            .hideOthers: "Hide Others",
+            .showAll: "Show All",
+            .services: "Services",
+            .undo: "Undo",
+            .redo: "Redo",
+            .cut: "Cut",
+            .copy: "Copy",
+            .paste: "Paste",
+            .selectAll: "Select All",
+            .minimize: "Minimize",
+            .zoom: "Zoom",
+            .bringAllToFront: "Bring All to Front",
+            .toggleFullScreen: "Enter Full Screen",
+            .fileMenu: "File",
+            .editMenu: "Edit",
+            .viewMenu: "View",
+            .windowMenu: "Window",
         ],
         .russian: [
             .projects: "Проекты",
@@ -193,6 +224,31 @@ public enum L10n {
             .defaultPhotoDuration: "Длительность фото по умолчанию",
             .autosave: "Автосохранение проектов",
             .language: "Язык",
+
+            .help: "Справка",
+            .lumislideHelp: "Справка Lumislide",
+            .newProject: "Новый проект",
+            .closeWindow: "Закрыть окно",
+            .about: "О программе Lumislide",
+            .quit: "Завершить Lumislide",
+            .hide: "Скрыть Lumislide",
+            .hideOthers: "Скрыть остальные",
+            .showAll: "Показать все",
+            .services: "Службы",
+            .undo: "Отменить",
+            .redo: "Повторить",
+            .cut: "Вырезать",
+            .copy: "Копировать",
+            .paste: "Вставить",
+            .selectAll: "Выбрать всё",
+            .minimize: "Свернуть",
+            .zoom: "Масштаб",
+            .bringAllToFront: "На передний план все",
+            .toggleFullScreen: "Во весь экран",
+            .fileMenu: "Файл",
+            .editMenu: "Правка",
+            .viewMenu: "Вид",
+            .windowMenu: "Окно",
         ],
     ]
 
@@ -255,6 +311,58 @@ public enum L10n {
     /// Локализованное название перехода на указанном языке.
     public static func transitionName(_ type: TransitionType, language: AppLanguage) -> String {
         transitionNames[language]?[type] ?? type.displayName
+    }
+
+    // MARK: - Справка
+
+    /// Раздел справки: заголовок + текст.
+    public struct HelpSection {
+        public let title: String
+        public let body: String
+        public init(title: String, body: String) {
+            self.title = title
+            self.body = body
+        }
+    }
+
+    /// Содержимое окна справки на текущем языке.
+    public static func helpSections() -> [HelpSection] {
+        switch currentLanguage {
+        case .russian:
+            return [
+                HelpSection(title: "Добавление медиа",
+                            body: "Нажмите «Добавить медиа» в тулбаре и выберите файлы (JPEG/HEIC/PNG, MOV/MP4) или «Из медиатеки Фото», чтобы добавить фото и видео из приложения «Фото»."),
+                HelpSection(title: "Порядок слайдов",
+                            body: "Перетаскивайте карточки в сетке — порядок карточек равен порядку в итоговом видео. Новый проект уже содержит Intro (название) и Outro («Конец») на чёрном фоне."),
+                HelpSection(title: "Переходы",
+                            body: "Переходы назначаются автоматически и детерминированно (повторный экспорт даёт тот же результат). Чтобы задать конкретный переход, кликните по карточке правой кнопкой → «Принудительный переход»; оранжевый чип показывает выбранный переход."),
+                HelpSection(title: "Титры",
+                            body: "ПКМ по фото → «Добавить титр…»: текст, размер шрифта, цвет и позиция (сверху/по центру/снизу)."),
+                HelpSection(title: "Эффект Кена Бёрнса и лица",
+                            body: "К фото автоматически применяется медленный зум/панорама, точка интереса учитывает найденные лица. Отключить для слайда: ПКМ → «Выключить эффект Кена Бёрнса»."),
+                HelpSection(title: "Музыка",
+                            body: "В «Свойствах проекта» подключите аудиофайл по ссылке. Музыка звучит только на фото-слайдах (с fade вокруг видео); на видео-слайдах звучит собственная звуковая дорожка."),
+                HelpSection(title: "Предпросмотр и экспорт",
+                            body: "«Предпросмотр» — живой рендер (play/pause, перемотка, громкость). «Экспорт» — H.264/H.265 в MP4 с выбором разрешения, качества и оценкой размера файла. Окна закрываются по Esc."),
+            ]
+        case .english:
+            return [
+                HelpSection(title: "Adding media",
+                            body: "Click 'Add Media' in the toolbar and choose files (JPEG/HEIC/PNG, MOV/MP4), or use 'From Photos Library' to add photos and videos from the Photos app."),
+                HelpSection(title: "Slide order",
+                            body: "Drag the cards in the grid — the card order equals the order in the final video. A new project already includes an intro (project name) and outro ('The End') on a black background."),
+                HelpSection(title: "Transitions",
+                            body: "Transitions are applied automatically and deterministically (re-exporting yields the same result). To force one, right-click a card → 'Force Transition'; an orange chip shows the chosen transition."),
+                HelpSection(title: "Titles",
+                            body: "Right-click a photo → 'Add Title…': text, font size, color and position (top/center/bottom)."),
+                HelpSection(title: "Ken Burns effect & faces",
+                            body: "Photos get a slow zoom/pan automatically; the focus point accounts for detected faces. Disable per slide: right-click → 'Disable Ken Burns on This Photo'."),
+                HelpSection(title: "Music",
+                            body: "Attach an audio file by reference in 'Project Properties'. Music plays only during photo slides (with fades around videos); video slides keep their own audio track."),
+                HelpSection(title: "Preview & export",
+                            body: "'Preview' renders live (play/pause, scrubbing, volume). 'Export' produces H.264/H.265 MP4 with resolution, quality and an estimated file size. Windows close with Esc."),
+            ]
+        }
     }
 }
 

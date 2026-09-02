@@ -20,9 +20,14 @@ macOS sandbox.
 ### Features
 
 - **Drag & drop grid editor** — reorder slides by dragging cards (`NSCollectionView`).
-- **10 transitions** between slides:
-  - Core Image: dissolve, slide left, slide right, wipe, push, iris open, iris close;
-  - Custom Metal kernels: door, grid, color fade.
+- **11 transitions** between slides:
+  - Core Image: dissolve, slide left, slide right, push left, push right, iris open,
+    iris close, dip to black;
+  - Custom Metal kernels: door, grid, flash.
+- **Auto intro/outro** — every new project starts with a black title slide (project name)
+  and ends with a black outro («The End»).
+- **Localized app menu & Help** — the main menu (File/Edit/…) and a built-in help window
+  follow the in-app language.
   - Transitions are applied **automatically and deterministically** (project seed), or
     forced per slide via right-click.
 - **Ken Burns effect** on photos — slow zoom/pan with a **face-aware focus point**
@@ -143,10 +148,14 @@ and app tests (localization, settings, import).
 
 - **Редактор-сетка с drag & drop** — порядок слайдов меняется перетаскиванием карточек
   (`NSCollectionView`).
-- **10 переходов** между слайдами:
-  - Core Image: растворение, скольжение влево/вправо, вытеснение, сдвиг,
-    открытие/закрытие круга;
-  - кастомные Metal-кернелы: дверь, сетка, цветной fade.
+- **11 переходов** между слайдами:
+  - Core Image: растворение, скольжение влево/вправо, сдвиг влево/вправо,
+    открытие/закрытие круга, затемнение;
+  - кастомные Metal-кернелы: дверь, сетка, вспышка.
+- **Авто Intro/Outro** — каждый новый проект начинается чёрным титульным слайдом
+  (название проекта) и заканчивается чёрным слайдом («Конец»).
+- **Локализованные меню и справка** — главное меню (Файл/Правка/…) и встроенное окно
+  справки следуют языку интерфейса.
   - Переходы назначаются **автоматически и детерминированно** (seed проекта) либо
     принудительно для конкретного слайда через ПКМ.
 - **Эффект Кена Бёрнса** на фото — медленный зум/панорама с **учётом лиц**

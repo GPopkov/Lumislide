@@ -3,6 +3,7 @@ import SwiftUI
 /// Точка входа приложения Lumislide.
 @main
 struct LumislideApp: App {
+    @NSApplicationDelegateAdaptor(LumislideAppDelegate.self) private var appDelegate
     @StateObject private var settings = AppSettings()
     @StateObject private var store: ProjectsStore
 
@@ -10,6 +11,8 @@ struct LumislideApp: App {
         let settings = AppSettings()
         _settings = StateObject(wrappedValue: settings)
         _store = StateObject(wrappedValue: ProjectsStore(settings: settings))
+        // Кастомное локализуемое главное меню (устанавливается после запуска).
+        AppMenuController.shared.configure(store: _store.wrappedValue, settings: settings)
     }
 
     var body: some Scene {
@@ -29,6 +32,14 @@ struct LumislideApp: App {
         }
 
         // Вторичные окна открываются программно (см. AppWindowsController).
+    }
+}
+
+/// Устанавливает кастомное локализуемое меню после запуска приложения.
+@MainActor
+final class LumislideAppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        AppMenuController.shared.install()
     }
 }
 
@@ -100,6 +111,22 @@ public enum AppWindowsController {
                 window?.close()
             })
         )
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Открывает окно справки.
+    public static func openHelp() {
+        let window = EscCloseWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 560, height: 560),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = L10n.text(.lumislideHelp)
+        window.center()
+        window.isReleasedWhenClosed = false
+        window.contentViewController = NSHostingController(rootView: HelpWindowView())
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
