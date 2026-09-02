@@ -52,11 +52,13 @@ final class AppMenuController: NSObject {
         observers = [
             center.addObserver(forName: NSApplication.didBecomeActiveNotification,
                                object: nil, queue: .main) { [weak self] _ in
-                self?.assertOwnMenu()
+                // Переустановка — следующим проходом run loop, ПОСЛЕ обработчиков
+                // SwiftUI того же события (иначе SwiftUI успевает мутировать меню).
+                DispatchQueue.main.async { self?.assertOwnMenu() }
             },
             center.addObserver(forName: NSWindow.didBecomeKeyNotification,
                                object: nil, queue: .main) { [weak self] _ in
-                self?.assertOwnMenu()
+                DispatchQueue.main.async { self?.assertOwnMenu() }
             },
         ]
         for delay in [0.1, 0.5, 1.5] {
@@ -65,10 +67,9 @@ final class AppMenuController: NSObject {
             }
         }
 
-        // Постоянный «сторожевой» таймер: SwiftUI может подменить mainMenu
-        // в любой момент (смена сцены, активация, открытие Settings и т.п.),
-        // причём ПОСЛЕ наших обработчиков тех же событий. Проверка раз в
-        // секунду (сравнение ссылок — дёшево) гарантированно возвращает меню.
+        // Постоянный «сторожевой» таймер: SwiftUI может мутировать/подменять
+        // mainMenu в любой момент (смена сцены, активация, открытие окна) —
+        // раз в секунду сверяем состав и возвращаем своё меню.
         let watchdog = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.assertOwnMenu()
         }
@@ -77,10 +78,35 @@ final class AppMenuController: NSObject {
         self.watchdog = watchdog
     }
 
-    /// Если mainMenu сейчас НЕ наш (его перезаписал SwiftUI) — возвращаем своё.
+    /// Если mainMenu сейчас НЕ наш (SwiftUI мутирует пункты нашего меню или
+    /// подменяет сам объект) — возвращаем своё меню.
     private func assertOwnMenu() {
-        guard let currentMainMenu, NSApp.mainMenu !== currentMainMenu else { return }
-        rebuild()
+        let current = NSApp.mainMenu
+        if current !== currentMainMenu {
+            rebuild()
+            return
+        }
+        // SwiftUI часто НЕ заменяет NSApp.mainMenu, а редактирует его пункты
+        // (оставляя Lumislide/View/Window/Help и убирая File/Edit) — поэтому
+        // сравниваем состав верхнего уровня с ожидаемым.
+        guard let expected = expectedTopLevelTitles() else { return }
+        let actual = (current?.items ?? []).compactMap { $0.submenu?.title ?? $0.title }
+        if actual != expected {
+            rebuild()
+        }
+    }
+
+    /// Ожидаемый состав верхнего уровня меню для текущего языка.
+    private func expectedTopLevelTitles() -> [String]? {
+        guard let builtLanguage else { return nil }
+        return [
+            "Lumislide",
+            L10n.text(.fileMenu, language: builtLanguage),
+            L10n.text(.editMenu, language: builtLanguage),
+            L10n.text(.viewMenu, language: builtLanguage),
+            L10n.text(.windowMenu, language: builtLanguage),
+            L10n.text(.help, language: builtLanguage),
+        ]
     }
 
     func rebuild() {
