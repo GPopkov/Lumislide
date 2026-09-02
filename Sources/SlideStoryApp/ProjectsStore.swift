@@ -452,22 +452,26 @@ public final class ProjectsStore: ObservableObject {
         let id = slideID
         let reference = slide
 
-        // ВАЖНО: Vision-детекция тяжёлая (для больших фото — секунды/минуты).
-        // Выполняем её на фоновом потоке (Task.detached), иначе главный поток
-        // блокируется и приложение «зависает» (курсор-крутилка, не открывается
-        // NSOpenPanel и т.п.).
-        Task.detached(priority: .userInitiated) {
-            guard let resolved = try? MediaResolver.resolveWithAccess(reference),
-                  let image = CIImage(contentsOf: resolved.url) else { return }
-            let regions = (try? await FaceDetector.detectFaces(in: image)) ?? []
+        // ВАЖНО: Vision-детекция тяжёлая. Выполняем её строго ПОСЛЕДОВАТЕЛЬНО
+        // (одна за другой) на фоновой serial-очереди c низким приоритетом:
+        // при добавлении 10+ фото пакет параллельных детекций забивает все
+        // ядра на минуты и приложение выглядит «зависшим» (спиннер при любом
+        // следующем действии — например, при открытии окна выбора файла).
+        // Само изображение декодируется сразу в уменьшенном виде (~1600 px).
+        Self.faceDetectionQueue.async { [weak self] in
+            guard let resolved = try? MediaResolver.resolveWithAccess(reference) else { return }
+            let regions = (try? FaceDetector.detectFacesSync(inImageAt: resolved.url)) ?? []
             guard !regions.isEmpty else { return }
-            await MainActor.run {
-                self.updateSlide(id: id) { slide in
+            Task { @MainActor in
+                self?.updateSlide(id: id) { slide in
                     slide.faceRegions = regions
                 }
             }
         }
     }
+
+    /// Serial-очередь детекции лиц: не больше одной Vision-детекции за раз.
+    private static let faceDetectionQueue = DispatchQueue(label: "com.lumislide.face-detection", qos: .utility)
 
     /// Переподключает недоступный файл по новому bookmark.
     public func relinkSlide(id: UUID) {

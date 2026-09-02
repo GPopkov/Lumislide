@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import AVFoundation
+import ImageIO
 import SlideStoryModel
 import SlideStoryRenderer
 
@@ -86,6 +87,8 @@ struct ThumbnailGridView: NSViewRepresentable {
         /// Слайды, для которых миниатюра уже запрошена (избегаем дублей).
         private var loadingThumbnails: Set<UUID> = []
         private var isReloading = false
+        /// Отложенный reloadData сетки (объединяет приходы миниатюр).
+        private var needsGridReload = false
 
         init(store: ProjectsStore) {
             self.store = store
@@ -219,14 +222,16 @@ struct ThumbnailGridView: NSViewRepresentable {
                 } else {
                     switch kind {
                     case .photo:
-                        result = NSImage(contentsOf: resolved.url)
+                        // Декодируем СРАЗУ в размере карточки (без полного
+                        // декода многомегапиксельного фото) — быстро и легко.
+                        result = Self.smallImage(at: resolved.url, maxPixel: 512)
                     case .video:
-                        result = Self.firstVideoFrame(url: resolved.url)
+                        if let full = Self.firstVideoFrame(url: resolved.url) {
+                            result = Self.downscaled(full, maxPixel: 512) ?? full
+                        }
                     }
-                    if let full = result {
-                        let small = Self.downscaled(full, maxPixel: 512) ?? full
-                        cache.store(small, forKey: cacheKey)
-                        result = small
+                    if let result {
+                        cache.store(result, forKey: cacheKey)
                     }
                 }
 
@@ -234,12 +239,42 @@ struct ThumbnailGridView: NSViewRepresentable {
                     self?.loadingThumbnails.remove(id)
                     if let result {
                         self?.thumbnails[id] = result
-                        self?.reloadItem(id)
+                        // Полный reloadData (с дебаунсом) вместо точечного
+                        // reloadItems: точечное обновление может теряться
+                        // (гонка с reloadData при добавлении слайдов) —
+                        // карточка остаётся заглушкой.
+                        self?.scheduleGridReload()
                     } else {
                         self?.scheduleRetry(for: id, attempt: attempt)
                     }
                 }
             }
+        }
+
+        /// Планирует перезагрузку сетки (объединяет несколько приходов
+        /// миниатюр в один reloadData).
+        private func scheduleGridReload() {
+            guard !needsGridReload else { return }
+            needsGridReload = true
+            DispatchQueue.main.async { [weak self] in
+                self?.needsGridReload = false
+                self?.reloadIfNeeded()
+            }
+        }
+
+        /// Декодирует изображение сразу в малом размере (без полного декода).
+        nonisolated private static func smallImage(at url: URL, maxPixel: Int) -> NSImage? {
+            guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+            let options: [CFString: Any] = [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceShouldCacheImmediately: false,
+            ]
+            guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+                return nil
+            }
+            return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
         }
 
         /// Уменьшает изображение до нужного размера карточки (быстро, ~КБ).
@@ -273,13 +308,6 @@ struct ThumbnailGridView: NSViewRepresentable {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 self?.loadThumbnail(for: slide, attempt: attempt + 1)
             }
-        }
-
-        /// Перерисовывает одну ячейку сетки (после готовности миниатюры).
-        private func reloadItem(_ id: UUID) {
-            guard let collectionView,
-                  let index = slides.firstIndex(where: { $0.id == id }) else { return }
-            collectionView.reloadItems(at: [IndexPath(item: index, section: 0)])
         }
 
         /// Извлекает первый кадр видео (для миниатюры).

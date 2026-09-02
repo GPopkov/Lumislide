@@ -27,18 +27,50 @@ public enum FaceDetectionError: Error, LocalizedError, Sendable {
 public enum FaceDetector {
 
     /// Находит лица на изображении.
+    ///
+    /// Для скорости изображение предварительно уменьшается до ~1600 px
+    /// по большей стороне: Vision ищет лица в нормализованных координатах,
+    /// поэтому точность позиций не страдает, а стоимость (декод + рендер +
+    /// детекция) падает в разы.
     /// - Parameter ciImage: изображение (фото-слайд).
     /// - Returns: массив нормализованных прямоугольников лиц
     ///   (координаты Vision: origin — верхний левый, 0...1).
     public static func detectFaces(in ciImage: CIImage) async throws -> [FaceRegion] {
         let cgImage: CGImage
-        guard let cg = try? convertToCGImage(ciImage) else {
+        guard let cg = try? convertToCGImage(downscaled(ciImage)) else {
             throw FaceDetectionError.invalidImage
         }
         cgImage = cg
+        return try performDetection(on: cgImage)
+    }
 
+    /// Находит лица в ФАЙЛЕ изображения, декодируя его сразу в уменьшенном
+    /// разрешении (без полного декода большого фото — быстрее и легче).
+    /// - Parameter url: URL файла изображения (jpg/heic/png).
+    public static func detectFaces(inImageAt url: URL) async throws -> [FaceRegion] {
+        try detectFacesSync(inImageAt: url)
+    }
+
+    /// Синхронная детекция по файлу (для фоновых serial-очередей).
+    public static func detectFacesSync(inImageAt url: URL) throws -> [FaceRegion] {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+            throw FaceDetectionError.invalidImage
+        }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceThumbnailMaxPixelSize: 1600,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+        ]
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            throw FaceDetectionError.invalidImage
+        }
+        return try performDetection(on: cgImage)
+    }
+
+    /// Общая часть детекции по уже готовому CGImage (Vision синхронен).
+    private static func performDetection(on cgImage: CGImage) throws -> [FaceRegion] {
         let request = VNDetectFaceRectanglesRequest()
-
         let handler = VNImageRequestHandler(cgImage: cgImage, orientation: .up, options: [:])
         try handler.perform([request])
 
@@ -55,6 +87,16 @@ public enum FaceDetector {
                 height: Double(box.height)
             )
         }
+    }
+
+    /// Уменьшает изображение перед детекцией (если оно больше лимита).
+    private static func downscaled(_ image: CIImage) -> CIImage {
+        let maxDimension: CGFloat = 1600
+        let extent = image.extent
+        let longest = max(extent.width, extent.height)
+        guard longest > maxDimension, longest > 0 else { return image }
+        let scale = maxDimension / longest
+        return image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
     }
 
     /// Синхронный вариант (используется в тестах и ранних стадиях).
