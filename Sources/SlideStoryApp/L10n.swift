@@ -35,7 +35,7 @@ public enum L10n {
         // Экспорт
         case codec, resolution, frameRate, quality, ready, exporting,
              exportFinished, exportCancelled, exportFailed, cancelExport,
-             timeLeft, estimatedFileSize, approxMB, approxGB
+             timeLeft, estimatedFileSize, approxMB, approxGB, done
 
         // Настройки
         case settings, projectsFolder, defaultPhotoDuration, autosave, language
@@ -111,6 +111,7 @@ public enum L10n {
             .estimatedFileSize: "Estimated File Size",
             .approxMB: "≈ %@ MB",
             .approxGB: "≈ %@ GB",
+            .done: "Done",
 
             .settings: "Settings",
             .projectsFolder: "Projects Folder",
@@ -185,6 +186,7 @@ public enum L10n {
             .estimatedFileSize: "Примерный размер файла",
             .approxMB: "≈ %@ МБ",
             .approxGB: "≈ %@ ГБ",
+            .done: "Готово",
 
             .settings: "Настройки",
             .projectsFolder: "Папка проектов",

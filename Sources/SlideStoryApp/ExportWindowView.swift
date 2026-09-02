@@ -30,6 +30,9 @@ struct ExportWindowView: View {
 
     @State private var exporter: SlideshowExporter?
 
+    /// Завершён ли экспорт успешно (кнопка «Экспорт» → «Готово»).
+    @State private var didFinishExport = false
+
     /// Длительность таймлайна (для оценки размера файла).
     @State private var timelineDuration: Double = 0
     /// Отформатированная оценка размера («≈ 128 МБ»), пусто — пока не посчитана.
@@ -41,6 +44,13 @@ struct ExportWindowView: View {
 
     private var selectedSize: CGSize {
         presets.first(where: { $0.id == presetID })?.size ?? .init(width: 1920, height: 1080)
+    }
+
+    /// Заголовок главной кнопки окна экспорта.
+    private var primaryButtonTitle: String {
+        if isExporting { return L10n.text(.cancelExport) }
+        if didFinishExport { return L10n.text(.done) }
+        return "\(L10n.text(.export))…"
     }
 
     var body: some View {
@@ -124,11 +134,17 @@ struct ExportWindowView: View {
 
             HStack {
                 Spacer()
-                Button(L10n.text(.cancel)) {
+                Button(isExporting ? L10n.text(.cancel) : L10n.text(.close)) {
                     if isExporting { cancelExport() } else { onClose() }
                 }
-                Button(isExporting ? L10n.text(.cancelExport) : "\(L10n.text(.export))…") {
-                    if isExporting { cancelExport() } else { startExport() }
+                Button(primaryButtonTitle) {
+                    if isExporting {
+                        cancelExport()
+                    } else if didFinishExport {
+                        onClose()
+                    } else {
+                        startExport()
+                    }
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(project.slides.isEmpty)
@@ -202,6 +218,7 @@ struct ExportWindowView: View {
         let exporter = SlideshowExporter(project: project, request: request)
         self.exporter = exporter
         isExporting = true
+        didFinishExport = false
         statusMessage = L10n.text(.exporting)
         progress = 0
 
@@ -220,6 +237,7 @@ struct ExportWindowView: View {
                 try exporterRef.export()
                 await MainActor.run {
                     isExporting = false
+                    didFinishExport = true
                     statusMessage = L10n.text(.exportFinished)
                     progress = 1
                     self.exporter = nil
@@ -227,6 +245,7 @@ struct ExportWindowView: View {
             } catch {
                 await MainActor.run {
                     isExporting = false
+                    didFinishExport = false
                     if (error as? SlideshowExportError) == .cancelled {
                         statusMessage = L10n.text(.exportCancelled)
                     } else {
