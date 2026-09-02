@@ -71,7 +71,7 @@ public enum L10n {
             .thumbnailSize: "Thumbnail Size",
             .fromPhotos: "From Photos Library",
             .photosAccessDenied: "Photos Library Access Required",
-            .photosAccessDeniedMessage: "Allow access in System Settings → Privacy & Security → Photos, then try again.",
+            .photosAccessDeniedMessage: "Lumislide needs access to your Photos library. Enable it in System Settings → Privacy & Security → Photos, then quit and reopen Lumislide.",
 
             .projectProperties: "Project Properties",
             .name: "Name",
@@ -147,7 +147,7 @@ public enum L10n {
             .thumbnailSize: "Размер миниатюр",
             .fromPhotos: "Из медиатеки Фото",
             .photosAccessDenied: "Нужен доступ к медиатеке Фото",
-            .photosAccessDeniedMessage: "Разрешите доступ в Системных настройках → Конфиденциальность и безопасность → Фото и попробуйте снова.",
+            .photosAccessDeniedMessage: "Lumislide нужен доступ к вашей медиатеке Фото. Разрешите его в Системных настройках → Конфиденциальность и безопасность → Фото, затем полностью закройте и снова откройте Lumislide.",
 
             .projectProperties: "Свойства проекта",
             .name: "Название",

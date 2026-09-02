@@ -100,7 +100,7 @@ struct MainWindowView: View {
         ) {
             Button("OK") { store.mediaAccessError = nil }
         } message: {
-            Text(store.mediaAccessError ?? L10n.text(.photosAccessDeniedMessage))
+            Text(L10n.text(.photosAccessDeniedMessage))
         }
     }
 
