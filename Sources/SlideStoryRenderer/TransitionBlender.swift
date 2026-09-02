@@ -157,8 +157,12 @@ public final class TransitionBlender: @unchecked Sendable {
         commandBuffer.commit()
         commandBuffer.waitUntilCompleted()
 
-        return CIImage(mtlTexture: textures.output, options: [.colorSpace: CGColorSpaceCreateDeviceRGB()])
+        // Metal-текстура читается Core Image вертикально перевёрнутой
+        // (строка 0 текстуры соответствует верху, а CI считает её низом).
+        // Возвращаем кадр в правильной ориентации.
+        let rawOutput = CIImage(mtlTexture: textures.output, options: [.colorSpace: CGColorSpaceCreateDeviceRGB()])
             ?? CIImage(cgImage: textures.output.toCGImage(ciContext: ciContext))
+        return rawOutput.oriented(.downMirrored)
     }
 
     // MARK: - Metal-текстуры
@@ -203,14 +207,16 @@ public final class TransitionBlender: @unchecked Sendable {
             return slide(from: fromImage, to: toImage, t: progress, direction: .left)
         case .slideRight:
             return slide(from: fromImage, to: toImage, t: progress, direction: .right)
-        case .wipe:
-            return wipe(from: fromImage, to: toImage, t: progress)
         case .push:
             return push(from: fromImage, to: toImage, t: progress, direction: .left)
+        case .pushRight:
+            return push(from: fromImage, to: toImage, t: progress, direction: .right)
         case .irisOpen:
             return iris(from: fromImage, to: toImage, t: progress, open: true)
         case .irisClose:
             return iris(from: fromImage, to: toImage, t: progress, open: false)
+        case .dipToBlack:
+            return dipToBlack(from: fromImage, to: toImage, t: progress)
         default:
             return nil
         }
@@ -242,19 +248,9 @@ public final class TransitionBlender: @unchecked Sendable {
         return swipe.outputImage
     }
 
-    private static func wipe(from: CIImage, to: CIImage, t: Double) -> CIImage? {
-        let filter = CIFilter.swipeTransition()
-        filter.inputImage = from
-        filter.targetImage = to
-        filter.time = Float(t)
-        filter.angle = 0
-        filter.width = 1
-        return filter.outputImage
-    }
-
     private static func push(from: CIImage, to: CIImage, t: Double, direction: SlideDirection) -> CIImage? {
-        // CI не имеет push-перехода; используем комбинацию смещения
-        // и dissolve: два слоя, целевой «толкает» исходный.
+        // CI не имеет push-перехода; используем комбинацию смещения:
+        // два слоя, целевой «толкает» исходный.
         let width = from.extent.width
         let offset = CGFloat(t) * width * (direction == .left ? -1 : 1)
 
@@ -266,18 +262,52 @@ public final class TransitionBlender: @unchecked Sendable {
         return composited.cropped(to: canvasRect)
     }
 
+    /// Затемнение: cross-fade через чёрный (from → чёрный → to).
+    private static func dipToBlack(from: CIImage, to: CIImage, t: Double) -> CIImage? {
+        let extent = from.extent
+        let black = CIImage(color: CIColor(red: 0, green: 0, blue: 0, alpha: 1))
+            .cropped(to: extent)
+        let scaled = min(max(t, 0), 1) * 2 // 0...2
+
+        if scaled < 1 {
+            let fade = CIFilter.dissolveTransition()
+            fade.inputImage = from
+            fade.targetImage = black
+            fade.time = Float(min(scaled, 1))
+            return fade.outputImage
+        } else {
+            let fade = CIFilter.dissolveTransition()
+            fade.inputImage = black
+            fade.targetImage = to
+            fade.time = Float(min(scaled - 1, 1))
+            return fade.outputImage
+        }
+    }
+
+    /// Круг (iris). Оба варианта корректно начинаются с `from` и заканчиваются `to`:
+    /// - open: круг `to` растёт из центра;
+    /// - close: круг `from` сжимается к центру, открывая `to` с краёв.
     private static func iris(from: CIImage, to: CIImage, t: Double, open: Bool) -> CIImage? {
-        // Радиальная маска: используем CIBlendWithMask с радиальным градиентом.
-        let maxRadius = max(from.extent.width, from.extent.height) / 2
-        let radius = CGFloat(open ? (1.0 - t) : t) * maxRadius
+        let extent = from.extent
+        let center = CGPoint(x: extent.midX, y: extent.midY)
+        // Полудиагональ: при t=1 круг гарантированно покрывает весь кадр.
+        let maxRadius = hypot(extent.width, extent.height) / 2
+        let radius = CGFloat(open ? t : (1.0 - t)) * maxRadius
 
         let radial = CIFilter.radialGradient()
-        radial.center = CGPoint(x: from.extent.midX, y: from.extent.midY)
-        radial.radius0 = 0
-        radial.radius1 = Float(radius)
-        radial.color0 = CIColor(red: 0, green: 0, blue: 0, alpha: 1) // прозрачный (в маске: 1 = from)
-        radial.color1 = CIColor(red: 1, green: 1, blue: 1, alpha: 1)
-        guard let mask = radial.outputImage?.cropped(to: from.extent) else { return nil }
+        radial.center = center
+        radial.radius0 = Float(max(radius, 0))
+        radial.radius1 = Float(max(radius + 2, 2))
+        if open {
+            // Внутри круга — белый (to), снаружи — чёрный (from).
+            radial.color0 = CIColor(red: 1, green: 1, blue: 1, alpha: 1)
+            radial.color1 = CIColor(red: 0, green: 0, blue: 0, alpha: 1)
+        } else {
+            // Внутри сжимающегося круга — чёрный (from), снаружи — белый (to).
+            radial.color0 = CIColor(red: 0, green: 0, blue: 0, alpha: 1)
+            radial.color1 = CIColor(red: 1, green: 1, blue: 1, alpha: 1)
+        }
+        guard let mask = radial.outputImage?.cropped(to: extent) else { return nil }
 
         let blend = CIFilter.blendWithMask()
         blend.inputImage = to

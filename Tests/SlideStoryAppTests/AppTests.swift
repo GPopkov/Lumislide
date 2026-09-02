@@ -31,9 +31,12 @@ final class AppTests: XCTestCase {
         // Точечные проверки.
         XCTAssertEqual(L10n.transitionName(.dissolve, language: .russian), "Растворение")
         XCTAssertEqual(L10n.transitionName(.slideLeft, language: .russian), "Скольжение влево")
-        XCTAssertEqual(L10n.transitionName(.push, language: .russian), "Сдвиг")
+        XCTAssertEqual(L10n.transitionName(.push, language: .russian), "Сдвиг влево")
+        XCTAssertEqual(L10n.transitionName(.pushRight, language: .russian), "Сдвиг вправо")
+        XCTAssertEqual(L10n.transitionName(.dipToBlack, language: .russian), "Затемнение")
         XCTAssertEqual(L10n.transitionName(.door, language: .russian), "Дверь")
         XCTAssertEqual(L10n.transitionName(.grid, language: .russian), "Сетка")
+        XCTAssertEqual(L10n.transitionName(.colorFade, language: .russian), "Вспышка")
         XCTAssertEqual(L10n.transitionName(.dissolve, language: .english), "Dissolve")
     }
 

@@ -1,9 +1,9 @@
 import Foundation
 
-/// 10 типов переходов между слайдами.
+/// Типы переходов между слайдами.
 ///
-/// Первые 7 реализуются встроенными фильтрами Core Image,
-/// последние 3 — кастомными Metal-кернелами.
+/// Часть реализуется встроенными фильтрами Core Image,
+/// часть — кастомными Metal-кернелами.
 public enum TransitionType: String, Codable, CaseIterable, Sendable {
     /// Растворение (CI)
     case dissolve
@@ -11,19 +11,21 @@ public enum TransitionType: String, Codable, CaseIterable, Sendable {
     case slideLeft
     /// Скольжение вправо (CI)
     case slideRight
-    /// Вытеснение / жёсткая маска-оружие (CI)
-    case wipe
-    /// Сдвиг (CI)
+    /// Сдвиг влево (CI)
     case push
+    /// Сдвиг вправо (CI)
+    case pushRight
     /// Открытие круга (CI)
     case irisOpen
     /// Закрытие круга (CI)
     case irisClose
+    /// Затемнение — cross-fade через чёрный (CI)
+    case dipToBlack
     /// Дверь (Metal)
     case door
     /// Сетка (Metal)
     case grid
-    /// Цветной fade (Metal)
+    /// Вспышка — белое проявление (Metal)
     case colorFade
 
     /// Категория реализации перехода.
@@ -35,7 +37,8 @@ public enum TransitionType: String, Codable, CaseIterable, Sendable {
     /// К какой реализации относится переход.
     public var backend: Backend {
         switch self {
-        case .dissolve, .slideLeft, .slideRight, .wipe, .push, .irisOpen, .irisClose:
+        case .dissolve, .slideLeft, .slideRight, .push, .pushRight,
+             .irisOpen, .irisClose, .dipToBlack:
             return .coreImage
         case .door, .grid, .colorFade:
             return .metal
@@ -50,24 +53,25 @@ public enum TransitionType: String, Codable, CaseIterable, Sendable {
         case .dissolve: return "Dissolve"
         case .slideLeft: return "Slide Left"
         case .slideRight: return "Slide Right"
-        case .wipe: return "Wipe"
-        case .push: return "Push"
+        case .push: return "Push Left"
+        case .pushRight: return "Push Right"
         case .irisOpen: return "Iris Open"
         case .irisClose: return "Iris Close"
+        case .dipToBlack: return "Dip to Black"
         case .door: return "Door"
         case .grid: return "Grid"
-        case .colorFade: return "Color Fade"
+        case .colorFade: return "Flash"
         }
     }
 }
 
 public extension TransitionType {
-    /// Канонический порядок всех 10 переходов — используется генератором
+    /// Канонический порядок всех переходов — используется генератором
     /// случайного выбора, чтобы индексы не зависели от порядка `allCases`
     /// при будущих изменениях модели.
     static let transitionOrder: [TransitionType] = [
-        .dissolve, .slideLeft, .slideRight, .wipe, .push,
-        .irisOpen, .irisClose, .door, .grid, .colorFade,
+        .dissolve, .slideLeft, .slideRight, .push, .pushRight,
+        .irisOpen, .irisClose, .dipToBlack, .door, .grid, .colorFade,
     ]
 
     /// Индекс перехода в каноническом порядке (0...11).
