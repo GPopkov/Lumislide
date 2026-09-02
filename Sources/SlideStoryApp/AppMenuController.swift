@@ -14,6 +14,9 @@ final class AppMenuController: NSObject {
     weak var settings: AppSettings?
     private var cancellable: AnyCancellable?
     private var builtLanguage: AppLanguage?
+    /// Последнее установленное нами меню (для защиты от перезаписи SwiftUI).
+    private var currentMainMenu: NSMenu?
+    private var observers: [NSObjectProtocol] = []
 
     /// Подключает store/settings и подписывается на смену языка.
     /// Меню устанавливается в `install()` (после запуска NSApplication).
@@ -36,10 +39,40 @@ final class AppMenuController: NSObject {
     func install() {
         builtLanguage = settings?.language
         rebuild()
+
+        // ВАЖНО: SwiftUI (App-жизненный цикл) может установить СВОЙ
+        // (английский) mainMenu ПОСЛЕ нашего applicationDidFinishLaunching —
+        // гонка, из-за которой русское меню иногда пропадает, а File/Edit
+        // исчезают. Защищаемся: возвращаем своё меню в течение первой
+        // секунды и при каждой активации/фокусе окна.
+        let center = NotificationCenter.default
+        observers = [
+            center.addObserver(forName: NSApplication.didBecomeActiveNotification,
+                               object: nil, queue: .main) { [weak self] _ in
+                self?.assertOwnMenu()
+            },
+            center.addObserver(forName: NSWindow.didBecomeKeyNotification,
+                               object: nil, queue: .main) { [weak self] _ in
+                self?.assertOwnMenu()
+            },
+        ]
+        for delay in [0.1, 0.5, 1.5] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.assertOwnMenu()
+            }
+        }
+    }
+
+    /// Если mainMenu сейчас НЕ наш (его перезаписал SwiftUI) — возвращаем своё.
+    private func assertOwnMenu() {
+        guard let currentMainMenu, NSApp.mainMenu !== currentMainMenu else { return }
+        rebuild()
     }
 
     func rebuild() {
-        NSApp.mainMenu = buildMainMenu()
+        let menu = buildMainMenu()
+        currentMainMenu = menu
+        NSApp.mainMenu = menu
     }
 
     // MARK: - Меню
