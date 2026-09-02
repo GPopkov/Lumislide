@@ -33,8 +33,9 @@ macOS sandbox.
   their **own audio track**.
 - **Aspect ratios** 16:9, 4:3, 9:16, 1:1. No cropping: media is fitted and the empty space
   is filled with a blurred, stretched copy of the same image.
-- **Photos library** — add your Photos app content directly (referenced by PHAsset,
-  exported to a temporary file only during preview/export; no copies in the project).
+- **Photos library** — add content from the Photos app directly. The macOS picker does not
+  expose file paths or library references, so the selected items are imported into the
+  app's storage (`Application Support`) and referenced like regular media.
 - **Live preview window** — same render pipeline as export, at reduced resolution.
   Closes with **Esc** (all windows do).
 - **Export** to MP4 (H.264 or H.265), configurable resolution / frame rate / quality,
@@ -156,8 +157,9 @@ and app tests (localization, settings, import).
   звучит **собственная звуковая дорожка** видео.
 - **Соотношения сторон** 16:9, 4:3, 9:16, 1:1. Обрезка не применяется: медиа вписывается
   целиком, пустое пространство заполняется размытой растянутой копией того же кадра.
-- **Медиатека Фото** — добавление контента из приложения «Фото» напрямую (ссылка на
-  PHAsset; во временный файл экспортируется только при предпросмотре/экспорте, копий в проекте нет).
+- **Медиатека Фото** — добавление контента из приложения «Фото» напрямую. Пикер macOS не
+  отдаёт прямых путей к файлам/ссылкам на медиатеку, поэтому выбранные элементы
+  импортируются в хранилище приложения (Application Support) и используются как обычное медиа.
 - **Окно предпросмотра** — тот же рендер-пайплайн, что и при экспорте, в пониженном
   разрешении (живой рендер кадров, play/pause, перемотка, громкость). Закрывается по **Esc**
   (как и остальные окна).

@@ -2,7 +2,7 @@ import Foundation
 import Combine
 import AppKit
 import UniformTypeIdentifiers
-import Photos
+import CoreTransferable
 #if canImport(_PhotosUI_SwiftUI)
 import _PhotosUI_SwiftUI
 #else
@@ -36,8 +36,6 @@ public final class ProjectsStore: ObservableObject {
     @Published public var currentProjectURL: URL?
     /// Сохранён ли текущий проект (для маркера «изменено»).
     @Published public var isDirty = false
-    /// Последняя ошибка доступа к медиа (например, запрет доступа к Фото).
-    @Published public var mediaAccessError: String?
 
     private let settings: AppSettings
     private var lastSavedName = ""
@@ -225,81 +223,97 @@ public final class ProjectsStore: ObservableObject {
     }
 
     /// Добавляет выбранные элементы медиатеки Фото в конец проекта.
-    /// Хранятся ссылки на PHAsset (`photosLocalIdentifier`), контент
-    /// экспортируется во временный файл при предпросмотре/экспорте.
     ///
-    /// ВАЖНО: системный пикер (PhotosPicker) сам по себе НЕ выдаёт приложению
-    /// доступ к библиотеке Фото — запрашиваем авторизацию здесь, иначе
-    /// `PHAsset.fetchAssets` вернёт пусто и слайды не добавятся.
+    /// На macOS системный пикер (PhotosPicker) не отдаёт приложению прямых
+    /// ссылок на PHAsset (`itemIdentifier` может быть nil, а медиатека —
+    /// недоступна без отдельной авторизации, которую пикер не выдаёт).
+    /// Поэтому выбранный контент ИМПОРТИРУЕТСЯ: данные загружаются через
+    /// `loadTransferable` и сохраняются в папку приложения
+    /// (`Application Support/Lumislide/ImportedMedia`); слайд ссылается на
+    /// копию обычным security-scoped bookmark'ом.
     /// - Parameter items: выбранные элементы `PhotosPicker`.
     public func addPhotos(_ items: [PhotosPickerItem]) {
         guard currentProject != nil, !items.isEmpty else { return }
-        mediaAccessError = nil
 
-        switch PHPhotoLibrary.authorizationStatus(for: .readWrite) {
-        case .authorized, .limited:
-            addPhotosItems(items)
-        case .notDetermined:
-            PHPhotoLibrary.requestAuthorization(for: .readWrite) { newStatus in
-                Task { @MainActor in
-                    switch newStatus {
-                    case .authorized, .limited:
-                        self.addPhotosItems(items)
-                    default:
-                        self.mediaAccessError = L10n.text(.photosAccessDenied)
-                    }
+        guard let directory = Self.importedMediaDirectory() else { return }
+
+        for item in items {
+            let kind = Self.kind(for: item) ?? .photo
+            Task { @MainActor in
+                guard self.currentProject != nil,
+                      let imported = await Self.importItem(item, kind: kind, into: directory),
+                      let bookmark = try? BookmarkResolver.createBookmark(for: imported)
+                else { return }
+
+                let reference = MediaReference(
+                    kind: kind,
+                    bookmarkData: bookmark,
+                    displayName: imported.lastPathComponent
+                )
+                self.mutate { project in
+                    project.slides.append(reference)
+                }
+
+                // Детекция лиц для фото — заранее.
+                if kind == .photo {
+                    self.precomputeFaces(for: reference.id)
                 }
             }
-        default:
-            mediaAccessError = L10n.text(.photosAccessDenied)
         }
     }
 
-    private func addPhotosItems(_ items: [PhotosPickerItem]) {
-        let identifiers = items.compactMap { $0.itemIdentifier }
-        guard !identifiers.isEmpty else {
-            mediaAccessError = L10n.text(.photosAccessDenied)
-            return
-        }
+    /// Тип медиа элемента (по поддерживаемым типам контента).
+    private static func kind(for item: PhotosPickerItem) -> MediaKind? {
+        let types = item.supportedContentTypes
+        if types.contains(where: { $0.conforms(to: .movie) }) { return .video }
+        if types.contains(where: { $0.conforms(to: .image) }) { return .photo }
+        return nil
+    }
 
-        // Тип и имя берём из ассета; если ассет не резолвится (редкий случай) —
-        // определяем тип по содержимому элемента и используем identifier как имя.
-        let assets = PHAsset.fetchAssets(withLocalIdentifiers: identifiers, options: nil)
-        var assetsByID: [String: PHAsset] = [:]
-        assets.enumerateObjects { asset, _, _ in
-            assetsByID[asset.localIdentifier] = asset
+    /// Расширение для сохраняемого файла (из типа контента элемента).
+    private static func preferredExtension(for item: PhotosPickerItem, kind: MediaKind) -> String {
+        let type = item.supportedContentTypes.first { candidate in
+            kind == .video ? candidate.conforms(to: .movie) : candidate.conforms(to: .image)
         }
+        return type?.preferredFilenameExtension ?? (kind == .video ? "mov" : "jpg")
+    }
 
-        var references: [MediaReference] = []
-        for item in items {
-            guard let id = item.itemIdentifier else { continue }
-            let asset = assetsByID[id]
-            let kind: MediaKind
-            let name: String
-            if let asset {
-                kind = asset.mediaType == .video ? .video : .photo
-                name = PHAssetResource.assetResources(for: asset).first?.originalFilename ?? id
-            } else {
-                let isVideo = item.supportedContentTypes.contains { $0.conforms(to: .movie) }
-                kind = isVideo ? .video : .photo
-                name = id
+    /// Папка для импортированного из Фото контента (Application Support).
+    private static func importedMediaDirectory() -> URL? {
+        let fm = FileManager.default
+        let base = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? fm.temporaryDirectory
+        let directory = base.appendingPathComponent("Lumislide/ImportedMedia", isDirectory: true)
+        try? fm.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
+    }
+
+    /// Загружает контент элемента и сохраняет его в папку импорта.
+    private static func importItem(
+        _ item: PhotosPickerItem,
+        kind: MediaKind,
+        into directory: URL
+    ) async -> URL? {
+        let ext = preferredExtension(for: item, kind: kind)
+        let target = directory.appendingPathComponent("\(UUID().uuidString).\(ext)")
+
+        // Видео предпочитаем загружать файлом — без загрузки всего файла в память.
+        if kind == .video, let file = try? await item.loadTransferable(type: PickedMediaFile.self) {
+            do {
+                try FileManager.default.copyItem(at: file.url, to: target)
+                return target
+            } catch {
+                return nil
             }
-            references.append(MediaReference(
-                kind: kind,
-                bookmarkData: "",
-                displayName: name,
-                photosLocalIdentifier: id
-            ))
-        }
-        guard !references.isEmpty else { return }
-
-        mutate { project in
-            project.slides.append(contentsOf: references)
         }
 
-        // Детекция лиц для фото — заранее.
-        for slide in references where slide.kind == .photo {
-            precomputeFaces(for: slide.id)
+        // Универсальный путь: загрузка данных (работает и для фото, и для видео).
+        do {
+            guard let data = try await item.loadTransferable(type: Data.self) else { return nil }
+            try data.write(to: target)
+            return target
+        } catch {
+            return nil
         }
     }
 
@@ -401,6 +415,20 @@ public enum MediaImporter {
         let base = stillURL.deletingPathExtension().lastPathComponent
         let candidate = directory.appendingPathComponent("\(base).mov")
         return FileManager.default.fileExists(atPath: candidate.path) ? candidate : nil
+    }
+}
+
+/// Обёртка для получения файла из PhotosPicker (видео) через `loadTransferable`
+/// без загрузки всего содержимого в память.
+private struct PickedMediaFile: Transferable {
+    let url: URL
+
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(contentType: .movie) { file in
+            SentTransferredFile(file.url)
+        } importing: { received in
+            PickedMediaFile(url: received.file)
+        }
     }
 }
 
