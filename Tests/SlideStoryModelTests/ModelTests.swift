@@ -262,4 +262,50 @@ final class ModelTests: XCTestCase {
         XCTAssertEqual(AspectRatio.square1x1.presets.count, 3)
         XCTAssertEqual(AspectRatio.portrait9x16.presets[1].size.height, 1920)
     }
+
+    // MARK: - Сессионный доступ к свежим bookmark'ам
+
+    func testSessionURLBypassesBookmarkResolution() throws {
+        let fm = FileManager.default
+        let dir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("session-photo.jpg")
+        try Data([0xFF, 0xD8, 0xFF, 0xD9]).write(to: url)
+
+        // Регистрируем исходный URL за НЕВАЛИДНЫМ bookmark (имитация: свежий
+        // bookmark, который в текущей сессии ещё «не работает»).
+        let invalidBookmark = "!!!not-a-valid-bookmark!!!"
+        BookmarkResolver.registerSessionURL(url, forBookmark: invalidBookmark)
+
+        // Резолвинг должен вернуть зарегистрированный URL без разбора
+        // bookmark-данных.
+        let resolved = try BookmarkResolver.resolve(invalidBookmark)
+        XCTAssertEqual(resolved.url.standardizedFileURL, url.standardizedFileURL)
+
+        let plainURL = try BookmarkResolver.url(fromBookmark: invalidBookmark)
+        XCTAssertEqual(plainURL.standardizedFileURL, url.standardizedFileURL)
+
+        // Настоящий валидный bookmark НЕ должен резолвиться через реестр.
+        let realBookmark = try BookmarkResolver.createBookmark(for: url)
+        let resolvedReal = try BookmarkResolver.resolve(realBookmark)
+        XCTAssertEqual(resolvedReal.url.standardizedFileURL, url.standardizedFileURL)
+    }
+
+    func testSessionURLIgnoredWhenFileMissing() throws {
+        let fm = FileManager.default
+        let dir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: dir) }
+
+        // Файл существует на момент регистрации, затем удаляется.
+        let url = dir.appendingPathComponent("gone.jpg")
+        try Data([0xFF, 0xD8]).write(to: url)
+        let invalidBookmark = "%%%no-such-bookmark%%%"
+        BookmarkResolver.registerSessionURL(url, forBookmark: invalidBookmark)
+        try? fm.removeItem(at: url)
+
+        // Файл недоступен — реестр не должен «выдавать» мёртвый URL.
+        XCTAssertThrowsError(try BookmarkResolver.resolve(invalidBookmark))
+    }
 }

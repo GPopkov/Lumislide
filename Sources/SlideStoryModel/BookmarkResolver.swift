@@ -70,6 +70,53 @@ public enum BookmarkResolver {
     /// Опции создания bookmarks (используются при добавлении файлов).
     public static let creationOptions: URL.BookmarkCreationOptions = [.withSecurityScope, .securityScopeAllowOnlyReadAccess]
 
+    // MARK: - Сессионный доступ (fresh bookmarks)
+
+    /// macOS выдаёт приложению временный (powerbox) доступ к файлам,
+    /// выбранным в `NSOpenPanel`, на время текущей сессии. Повторное
+    /// разрешение ТОЛЬКО ЧТО созданного security-scoped bookmark'а в этой
+    /// же сессии может не сработать (sandbox отказывает в выдаче нового
+    /// расширения доступа или блокирует поток в ожидании ответа
+    /// scopedbookmarksagent) — при этом те же файлы после перезапуска
+    /// приложения по сохранённым bookmarks открываются без проблем.
+    ///
+    /// Поэтому пока приложение работает, для файлов, добавленных в этой
+    /// сессии, читаем исходный URL (доступ уже выдан системой), а bookmark
+    /// используем только в следующих запусках.
+    private static let sessionLock = NSLock()
+    private static var sessionURLs: [String: URL] = [:]
+    private static var sessionHolders: [URL: SecurityScopedAccess] = [:]
+
+    /// Регистрирует исходный URL файла (из `NSOpenPanel`/импорта) для
+    /// текущей сессии, связывая его с созданным bookmark'ом.
+    /// Доступ к URL удерживается до завершения приложения.
+    /// - Parameters:
+    ///   - url: оригинальный URL, выбранный пользователем.
+    ///   - base64: bookmark, созданный для этого URL.
+    public static func registerSessionURL(_ url: URL, forBookmark base64: String) {
+        sessionLock.lock()
+        defer { sessionLock.unlock() }
+        sessionURLs[base64] = url
+        if sessionHolders[url] == nil {
+            // startAccessing на уже выданном powerbox-URL — быстрый no-op
+            // (доступ уже активен); держатель продлевает его на сессию.
+            let holder = SecurityScopedAccess(
+                url: url,
+                isStarted: url.startAccessingSecurityScopedResource()
+            )
+            sessionHolders[url] = holder
+        }
+    }
+
+    /// URL, зарегистрированный для bookmark'а в текущей сессии (если есть).
+    private static func sessionURL(forBookmark base64: String) -> URL? {
+        sessionLock.lock()
+        defer { sessionLock.unlock() }
+        return sessionURLs[base64]
+    }
+
+    // MARK: - Bookmark API
+
     /// Создаёт security-scoped bookmark для файла.
     /// - Parameter url: URL файла.
     /// - Returns: base64-строка bookmark.
@@ -88,6 +135,10 @@ public enum BookmarkResolver {
     /// - Returns: URL файла (без старта security-scoped доступа).
     /// - Throws: `BookmarkError.invalidBookmarkData`.
     public static func url(fromBookmark base64: String) throws -> URL {
+        if let sessionURL = sessionURL(forBookmark: base64),
+           FileManager.default.fileExists(atPath: sessionURL.path) {
+            return sessionURL
+        }
         guard let data = Data(base64Encoded: base64) else {
             throw BookmarkError.invalidBookmarkData
         }
@@ -101,13 +152,7 @@ public enum BookmarkResolver {
     /// - Returns: `ResolvedMediaFile` с активным доступом.
     /// - Throws: `BookmarkError` если bookmark невалиден или доступ запрещён.
     public static func resolve(_ base64: String) throws -> ResolvedMediaFile {
-        guard let data = Data(base64Encoded: base64) else {
-            throw BookmarkError.invalidBookmarkData
-        }
-
-        var isStale = false
-        let url = try urlFromBookmarkData(data, isStale: &isStale)
-
+        let url = try url(fromBookmark: base64)
         let accessGranted = url.startAccessingSecurityScopedResource()
         guard accessGranted else {
             throw BookmarkError.accessDenied

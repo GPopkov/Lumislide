@@ -120,6 +120,8 @@ struct ProjectPropertiesView: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
         guard let bookmark = try? BookmarkResolver.createBookmark(for: url) else { return }
+        // Свежий bookmark в текущей сессии (см. registerSessionURL).
+        BookmarkResolver.registerSessionURL(url, forBookmark: bookmark)
         let ref = MediaAudioReference(bookmarkData: bookmark, displayName: url.lastPathComponent)
         musicName = ref.displayName
 

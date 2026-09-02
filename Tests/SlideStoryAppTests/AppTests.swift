@@ -169,6 +169,108 @@ final class AppTests: XCTestCase {
         defaults.removePersistentDomain(forName: "test.lumislide.rename2")
     }
 
+    // MARK: - Титул авто-Intro при переименовании
+
+    @MainActor
+    func testRenameProjectUpdatesIntroSlideTitle() throws {
+        let defaults = UserDefaults(suiteName: "test.lumislide.introTitle")!
+        defaults.removePersistentDomain(forName: "test.lumislide.introTitle")
+        let settings = AppSettings(defaults: defaults)
+
+        let fm = FileManager.default
+        let dir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: dir) }
+        settings.projectsDirectory = dir
+
+        let store = ProjectsStore(settings: settings)
+        store.createNewProject()
+        XCTAssertEqual(store.currentProject?.slides.count, 2, "Новый проект должен содержать Intro и Outro")
+        XCTAssertEqual(store.currentProject?.slides.first?.titleOverlay?.text, "Untitled")
+
+        // Переименовываем проект — Intro-слайд должен получить новое имя.
+        store.mutate { project in
+            project.name = "Светлогорск 2026"
+        }
+        XCTAssertEqual(store.currentProject?.slides.first?.titleOverlay?.text, "Светлогорск 2026",
+                       "Титул Intro-слайда должен следовать за именем проекта")
+
+        // Outro не должен измениться.
+        let outro = store.currentProject?.slides.last?.titleOverlay?.text
+        XCTAssertNotEqual(outro, "Светлогорск 2026")
+
+        defaults.removePersistentDomain(forName: "test.lumislide.introTitle")
+    }
+
+    @MainActor
+    func testRenameProjectDoesNotTouchManualIntroTitle() throws {
+        let defaults = UserDefaults(suiteName: "test.lumislide.introTitle2")!
+        defaults.removePersistentDomain(forName: "test.lumislide.introTitle2")
+        let settings = AppSettings(defaults: defaults)
+
+        let fm = FileManager.default
+        let dir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: dir) }
+        settings.projectsDirectory = dir
+
+        let store = ProjectsStore(settings: settings)
+        store.createNewProject()
+
+        // Пользователь вручную поменял титул Intro.
+        store.updateSlide(id: store.currentProject!.slides[0].id) { slide in
+            slide.titleOverlay?.text = "Мой фильм"
+        }
+
+        store.mutate { project in
+            project.name = "Другое имя"
+        }
+        XCTAssertEqual(store.currentProject?.slides.first?.titleOverlay?.text, "Мой фильм",
+                       "Вручную изменённый титул не должен перезаписываться")
+
+        defaults.removePersistentDomain(forName: "test.lumislide.introTitle2")
+    }
+
+    @MainActor
+    func testInsertSlidesGoesBeforeAutoOutro() throws {
+        let defaults = UserDefaults(suiteName: "test.lumislide.insertOrder")!
+        defaults.removePersistentDomain(forName: "test.lumislide.insertOrder")
+        let settings = AppSettings(defaults: defaults)
+        let store = ProjectsStore(settings: settings)
+
+        func blackSlide(_ text: String) -> MediaReference {
+            MediaReference(
+                kind: .photo,
+                bookmarkData: "bm-black",
+                displayName: "black.png",
+                titleOverlay: TitleOverlay(text: text, fontSize: 84, colorRGBA: .init(1, 1, 1, 1), position: .center),
+                isKenBurnsDisabled: true
+            )
+        }
+
+        // Порядок в новом проекте: Intro, Outro; медиа должны встать между ними.
+        var project = SlideshowProject(name: "Test")
+        project.slides = [blackSlide("Intro"), blackSlide("Конец")]
+
+        let photo = MediaReference(kind: .photo, bookmarkData: "bm-photo", displayName: "photo.jpg")
+        let video = MediaReference(kind: .video, bookmarkData: "bm-video", displayName: "clip.mp4")
+        store.insertSlides([photo, video], into: &project)
+
+        XCTAssertEqual(
+            project.slides.map(\.displayName),
+            ["black.png", "photo.jpg", "clip.mp4", "black.png"],
+            "Медиа должны вставляться перед авто-Outro"
+        )
+
+        // Если авто-Outro отсутствует — обычное добавление в конец.
+        var project2 = SlideshowProject(name: "No Outro")
+        project2.slides = [blackSlide("Intro")]
+        store.insertSlides([photo], into: &project2)
+        XCTAssertEqual(project2.slides.map(\.displayName), ["black.png", "photo.jpg"])
+
+        defaults.removePersistentDomain(forName: "test.lumislide.insertOrder")
+    }
+
     // MARK: - MediaImporter
 
     func testMediaKindDetection() {

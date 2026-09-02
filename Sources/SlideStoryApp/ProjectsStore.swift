@@ -224,7 +224,22 @@ public final class ProjectsStore: ObservableObject {
     /// Атомарно мутирует текущий проект и помечает его как изменённый.
     public func mutate(_ block: (inout SlideshowProject) -> Void) {
         guard var project = currentProject else { return }
+        let oldName = project.name
         block(&project)
+
+        // При переименовании проекта синхронизируем титул авто-Intro-слайда:
+        // первый чёрный слайд (black.png) с титром, равным старому имени
+        // проекта, получает новое имя. Если пользователь вручную изменил
+        // титул — не трогаем.
+        if project.name != oldName, !project.slides.isEmpty,
+           let first = project.slides.first,
+           first.kind == .photo,
+           first.isKenBurnsDisabled,
+           first.displayName.lowercased() == "black.png",
+           first.titleOverlay?.text == oldName {
+            project.slides[0].titleOverlay?.text = project.name
+        }
+
         project.updatedAt = Date()
         currentProject = project
         isDirty = true
@@ -234,6 +249,31 @@ public final class ProjectsStore: ObservableObject {
     }
 
     // MARK: - Медиа
+
+    /// Добавляет новые слайды в проект, вставляя их ПЕРЕД авто-Outro
+    /// (чёрный слайд «Конец»/«The End»), если тот стоит последним.
+    /// Если авто-Outro нет или он перемещён — добавляет в конец.
+    func insertSlides(_ newSlides: [MediaReference], into project: inout SlideshowProject) {
+        guard !newSlides.isEmpty else { return }
+        if let outroIndex = Self.autoOutroIndex(in: project) {
+            project.slides.insert(contentsOf: newSlides, at: outroIndex)
+        } else {
+            project.slides.append(contentsOf: newSlides)
+        }
+    }
+
+    /// Индекс авто-Outro: ПОСЛЕДНИЙ слайд — чёрный фон (black.png)
+    /// с титром «Конец»/«The End» и выключенным Ken Burns.
+    static func autoOutroIndex(in project: SlideshowProject) -> Int? {
+        guard let last = project.slides.last,
+              last.kind == .photo,
+              last.isKenBurnsDisabled,
+              last.displayName.lowercased() == "black.png",
+              let text = last.titleOverlay?.text else { return nil }
+        let endTitles = ["Конец", "The End"]
+        guard endTitles.contains(text) else { return nil }
+        return project.slides.count - 1
+    }
 
     /// Открывает NSOpenPanel с множественным выбором и добавляет файлы
     /// в конец текущего проекта (без копирования — только bookmarks).
@@ -254,6 +294,11 @@ public final class ProjectsStore: ObservableObject {
             guard let kind = MediaImporter.mediaKind(for: url) else { continue }
             guard let bookmark = try? BookmarkResolver.createBookmark(for: url) else { continue }
 
+            // ВАЖНО: свежий bookmark в этой же сессии может не разрешиться
+            // (см. BookmarkResolver.registerSessionURL) — регистрируем исходный
+            // URL, чтобы миниатюры/предпросмотр читали файл напрямую.
+            BookmarkResolver.registerSessionURL(url, forBookmark: bookmark)
+
             // Live Photo: если выбран HEIC и рядом есть MOV с тем же именем —
             // слайд ведёт себя как видео (движение).
             var refKind = kind
@@ -263,6 +308,7 @@ public final class ProjectsStore: ObservableObject {
                let videoBookmark = try? BookmarkResolver.createBookmark(for: videoURL) {
                 refKind = .video
                 bookmarkData = videoBookmark
+                BookmarkResolver.registerSessionURL(videoURL, forBookmark: videoBookmark)
             }
 
             newSlides.append(MediaReference(
@@ -274,7 +320,7 @@ public final class ProjectsStore: ObservableObject {
 
         guard !newSlides.isEmpty else { return }
         mutate { project in
-            project.slides.append(contentsOf: newSlides)
+            insertSlides(newSlides, into: &project)
         }
 
         // Детекция лиц для фото — заранее (кэшируется в MediaReference),
@@ -313,7 +359,7 @@ public final class ProjectsStore: ObservableObject {
                     displayName: imported.lastPathComponent
                 )
                 self.mutate { project in
-                    project.slides.append(reference)
+                    self.insertSlides([reference], into: &project)
                 }
 
                 // Детекция лиц для фото — заранее.
@@ -420,6 +466,8 @@ public final class ProjectsStore: ObservableObject {
         panel.message = L10n.text(.relinkFile)
         guard panel.runModal() == .OK, let url = panel.url else { return }
         guard let bookmark = try? BookmarkResolver.createBookmark(for: url) else { return }
+        // Свежий bookmark в текущей сессии (см. registerSessionURL).
+        BookmarkResolver.registerSessionURL(url, forBookmark: bookmark)
 
         mutate { project in
             project.slides[index].bookmarkData = bookmark

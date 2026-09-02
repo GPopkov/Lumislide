@@ -187,7 +187,9 @@ struct ThumbnailGridView: NSViewRepresentable {
 
         /// Асинхронно генерирует миниатюру (дисковый кэш → чтение/первый кадр)
         /// и обновляет ячейку по готовности.
-        private func loadThumbnail(for slide: MediaReference) {
+        /// При временном сбое (например, security-scoped доступ к только что
+        /// добавленному файлу ещё не установился) делает несколько повторов.
+        private func loadThumbnail(for slide: MediaReference, attempt: Int = 1) {
             guard !loadingThumbnails.contains(slide.id) else { return }
             loadingThumbnails.insert(slide.id)
 
@@ -199,7 +201,7 @@ struct ThumbnailGridView: NSViewRepresentable {
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 guard let resolved = try? MediaResolver.resolveWithAccess(reference) else {
                     DispatchQueue.main.async { [weak self] in
-                        self?.loadingThumbnails.remove(id)
+                        self?.scheduleRetry(for: id, attempt: attempt)
                     }
                     return
                 }
@@ -222,10 +224,24 @@ struct ThumbnailGridView: NSViewRepresentable {
 
                 DispatchQueue.main.async { [weak self] in
                     self?.loadingThumbnails.remove(id)
-                    guard let result else { return }
-                    self?.thumbnails[id] = result
-                    self?.reloadItem(id)
+                    if let result {
+                        self?.thumbnails[id] = result
+                        self?.reloadItem(id)
+                    } else {
+                        self?.scheduleRetry(for: id, attempt: attempt)
+                    }
                 }
+            }
+        }
+
+        /// Планирует повторную попытку загрузки миниатюры (до 3 попыток).
+        private func scheduleRetry(for id: UUID, attempt: Int) {
+            loadingThumbnails.remove(id)
+            guard attempt < 3,
+                  let slide = slides.first(where: { $0.id == id }) else { return }
+            let delay = 0.4 * Double(attempt)
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.loadThumbnail(for: slide, attempt: attempt + 1)
             }
         }
 
