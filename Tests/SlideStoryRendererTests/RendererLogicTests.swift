@@ -327,6 +327,23 @@ final class RendererLogicTests: XCTestCase {
         XCTAssertTrue(faces.isEmpty, "На однотонном изображении лиц быть не должно")
     }
 
+    func testPerSlideDurationAndPlayFullVideo() {
+        var project = SlideshowProject(transitionSeed: 3)
+        project.defaultPhotoDuration = 5
+        project.transitionDuration = 0
+        project.slides = [
+            MediaReference(kind: .photo, bookmarkData: "1", displayName: "p1", customDuration: 7),
+            MediaReference(kind: .video, bookmarkData: "2", displayName: "v1", playFullVideo: true),
+            MediaReference(kind: .video, bookmarkData: "3", displayName: "v2", customDuration: 2, playFullVideo: false),
+        ]
+        let videoDurations: [Int: Double] = [1: 10, 2: 10]
+        let timeline = TimelineBuilder.buildTimeline(project: project, videoDurations: videoDurations)
+        XCTAssertEqual(timeline.count, 3)
+        XCTAssertEqual(timeline[0].duration, 7, accuracy: 0.001)
+        XCTAssertEqual(timeline[1].duration, 10, accuracy: 0.001)
+        XCTAssertEqual(timeline[2].duration, 2, accuracy: 0.001)
+    }
+
     // MARK: - AudioTrackMixer.photoIntervals (интеграция с таймлайном)
 
     func testProjectPhotoIntervalsIntegratesWithTimeline() {
@@ -342,11 +359,11 @@ final class RendererLogicTests: XCTestCase {
         XCTAssertEqual(timeline.count, 3)
 
         let intervals = AudioTrackMixer.photoIntervals(project: project, timeline: timeline)
-        // Фото 0: 0...5 → музыке нужно замолкнуть за 2 c до видео (начинается в 4):
-        // интервал 0...2.
+        // Фото 0: 0...5 → музыке нужно замолкнуть за 1 c до видео (начинается в 4):
+        // интервал 0...3.
         XCTAssertEqual(intervals.count, 2)
         XCTAssertEqual(intervals[0].start, 0, accuracy: 0.001)
-        XCTAssertEqual(intervals[0].end, 2, accuracy: 0.001)
+        XCTAssertEqual(intervals[0].end, 3, accuracy: 0.001)
         // После видео (заканчивается в 9) фото снова звучит с 9 до конца (13+...):
         // слайд 2: 8...13, но следующий видео нет → интервал 9...13? Начинается с 8
         // (момент старта слайда 2 = 8), уточним в тесте по фактическому таймлайну.

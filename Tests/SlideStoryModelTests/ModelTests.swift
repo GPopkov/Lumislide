@@ -60,9 +60,10 @@ final class ModelTests: XCTestCase {
         ]
         project.slides[0].transitionOverride = .door
         project.slides[0].titleOverlay = TitleOverlay(text: "Hello", position: .bottom)
-        project.music = MusicSettings(source: .userFile(
-            MediaAudioReference(bookmarkData: "CCC", displayName: "track.mp3")
-        ), volume: 0.5)
+        project.music = MusicSettings(source: .userFiles([
+            MediaAudioReference(bookmarkData: "CCC", displayName: "track.mp3"),
+            MediaAudioReference(bookmarkData: "DDD", displayName: "track2.mp3"),
+        ]), volume: 0.5)
 
         let store = ProjectStore(fileURL: url)
         try store.save(project)
@@ -75,10 +76,9 @@ final class ModelTests: XCTestCase {
         XCTAssertEqual(loaded.slides[0].titleOverlay?.text, "Hello")
         XCTAssertEqual(loaded.transitionSeed, project.transitionSeed)
         XCTAssertEqual(loaded.music.volume, 0.5, accuracy: 0.001)
-        guard case .userFile(let audio) = loaded.music.source else {
-            return XCTFail("Ожидалась userFile музыка")
-        }
-        XCTAssertEqual(audio.displayName, "track.mp3")
+        let tracks = loaded.music.source?.trackReferences ?? []
+        XCTAssertEqual(tracks.count, 2)
+        XCTAssertEqual(tracks.first?.displayName, "track.mp3")
     }
 
     func testProjectTransitionOverrideWinsOverSeed() {
@@ -187,10 +187,10 @@ final class ModelTests: XCTestCase {
             slideEndTimes: ends,
             transitionDurations: transitions
         )
-        // Трек должен замолкнуть за fade (2 c) до старта видео = 4 - 2 = 2 c.
+        // Трек должен замолкнуть за fade (1 c) до старта видео = 4 - 1 = 3 c.
         XCTAssertEqual(intervals.count, 1)
         XCTAssertEqual(intervals[0].start, 0)
-        XCTAssertEqual(intervals[0].end, 2, accuracy: 0.001)
+        XCTAssertEqual(intervals[0].end, 3, accuracy: 0.001)
     }
 
     func testMusicPlanner_VideoThenPhoto() {
@@ -222,15 +222,25 @@ final class ModelTests: XCTestCase {
             slideEndTimes: ends,
             transitionDurations: transitions
         )
-        // Интервал 1: 0...4-fade(2) = 2
+        // Интервал 1: 0...4-fade(1) = 3
         // Интервал 2: после видео (start 9) ... до начала следующего видео (17) - fade:
-        //   фото 2 (9...14), фото 3 (13...18) — заканчивается на 17-2=15.
-        //   Итого: 9...15.
+        //   фото 2 (9...14), фото 3 (13...18) — заканчивается на 17-1=16.
+        //   Итого: 9...16.
         XCTAssertEqual(intervals.count, 2)
         XCTAssertEqual(intervals[0].start, 0)
-        XCTAssertEqual(intervals[0].end, 2, accuracy: 0.001)
+        XCTAssertEqual(intervals[0].end, 3, accuracy: 0.001)
         XCTAssertEqual(intervals[1].start, 9)
-        XCTAssertEqual(intervals[1].end, 15, accuracy: 0.001)
+        XCTAssertEqual(intervals[1].end, 16, accuracy: 0.001)
+    }
+
+    func testMediaReferenceDecodesWithoutNewFields() throws {
+        let id = UUID().uuidString
+        let json = "{\"id\":\"\(id)\",\"kind\":\"photo\",\"bookmarkData\":\"b\",\"displayName\":\"d\"}"
+        let ref = try JSONDecoder().decode(MediaReference.self, from: Data(json.utf8))
+        XCTAssertEqual(ref.displayName, "d")
+        XCTAssertNil(ref.customDuration)
+        XCTAssertTrue(ref.playFullVideo)
+        XCTAssertFalse(ref.isKenBurnsDisabled)
     }
 
     // MARK: - FaceRegion
@@ -259,7 +269,7 @@ final class ModelTests: XCTestCase {
     }
 
     func testAspectRatioPresets() {
-        XCTAssertEqual(AspectRatio.square1x1.presets.count, 3)
+        XCTAssertEqual(AspectRatio.square1x1.presets.count, 4)
         XCTAssertEqual(AspectRatio.portrait9x16.presets[1].size.height, 1920)
     }
 

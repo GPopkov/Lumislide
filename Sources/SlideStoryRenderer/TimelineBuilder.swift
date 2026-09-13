@@ -54,9 +54,16 @@ public enum TimelineBuilder {
             let duration: Double
             switch slide.kind {
             case .photo:
-                duration = project.defaultPhotoDuration
+                duration = slide.customDuration ?? project.defaultPhotoDuration
             case .video:
-                duration = videoDurations[index] ?? project.defaultPhotoDuration
+                let full = videoDurations[index] ?? project.defaultPhotoDuration
+                if slide.playFullVideo {
+                    duration = full
+                } else if let custom = slide.customDuration {
+                    duration = min(full, custom)
+                } else {
+                    duration = full
+                }
             }
 
             // Переход после этого слайда (если есть следующий).

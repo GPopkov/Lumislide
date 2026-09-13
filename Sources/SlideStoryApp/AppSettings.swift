@@ -20,8 +20,8 @@ public enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
 /// Общие настройки приложения (UserDefaults-backed).
 ///
 /// Свойства публикуются через `@Published`, изменения сохраняются
-/// в UserDefaults. Используется как `@StateObject` в корне приложения
-/// и прокидывается через `environmentObject`.
+/// в UserDefaults. Общий экземпляр — `AppSettings.shared`; прокидывается
+/// в сцены через `environmentObject`.
 public final class AppSettings: ObservableObject {
 
     private enum Keys {
@@ -91,6 +91,9 @@ public final class AppSettings: ObservableObject {
 import AppKit
 
 extension AppSettings {
+    /// Общий экземпляр настроек приложения (UserDefaults.standard).
+    public static let shared = AppSettings()
+
     /// Диалог выбора папки проектов.
     public func chooseProjectsDirectory() {
         let panel = NSOpenPanel()

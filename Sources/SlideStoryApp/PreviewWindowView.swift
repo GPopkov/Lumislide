@@ -147,7 +147,12 @@ final class PreviewRenderer {
     let project: SlideshowProject
     private var timeline: [SlideTimelineItem] = []
     private var renderer: TimelineFrameRenderer?
+    /// Рендер кадров выполняется на фоновой очереди (тяжёлые CI/Metal-кадры
+    /// не должны блокировать главный поток и «проскакивать» переходы).
+    private let renderQueue = DispatchQueue(label: "com.lumislide.preview.render", qos: .userInitiated)
     private let ciContext = CIContext()
+    private var pendingTime: Double?
+    private var isRendering = false
     private var timer: Timer?
     private var startTime: Date?
     private var pausedTime: Double = 0
@@ -180,26 +185,20 @@ final class PreviewRenderer {
 
     /// Возвращает фактические длительности видео-слайдов (секунды) по индексу.
     private static func resolveVideoDurations(project: SlideshowProject) -> [Int: Double] {
-        var result: [Int: Double] = [:]
-        for (index, slide) in project.slides.enumerated() where slide.kind == .video {
-            guard let resolved = try? MediaResolver.resolveWithAccess(slide),
-                  let source = try? VideoFrameSource(url: resolved.url, accessHolder: resolved.accessHolder) else { continue }
-            result[index] = source.duration
-        }
-        return result
+        MediaDurationResolver.resolveVideoDurations(project: project)
     }
 
     // MARK: - Аудио
 
     /// Собирает аудио-дорожку проекта и подготавливает AVPlayer.
     private func prepareAudio() {
-        let hasAudio = project.music.source != nil
+        let hasAudio = (project.music.source?.isEmpty == false)
             || project.slides.contains { $0.kind == .video }
         guard hasAudio else { return }
 
         let project = self.project
         let timeline = self.timeline
-        let musicURL = Self.resolveMusicURL(project: project)
+        let musicURLs = Self.resolveMusicURLs(project: project)
 
         // Построение композиции — тяжёлая синхронная работа (AVURLAsset
         // читает треки лениво). Выполняем на фоновом потоке, чтобы не
@@ -209,7 +208,7 @@ final class PreviewRenderer {
             guard let result = try? AudioTrackMixer.makeProjectAudioComposition(
                 project: project,
                 timeline: timeline,
-                musicURL: musicURL
+                musicURLs: musicURLs
             ), result.audioMix != nil else { return }
 
             let item = AVPlayerItem(asset: result.composition)
@@ -233,10 +232,14 @@ final class PreviewRenderer {
         }
     }
 
-    private static func resolveMusicURL(project: SlideshowProject) -> URL? {
-        guard case .userFile(let ref) = project.music.source,
-              let resolved = try? BookmarkResolver.resolve(ref.bookmarkData) else { return nil }
-        return resolved.url
+    private static func resolveMusicURLs(project: SlideshowProject) -> [URL] {
+        var urls: [URL] = []
+        for ref in project.music.source?.trackReferences ?? [] {
+            if let resolved = try? BookmarkResolver.resolve(ref.bookmarkData) {
+                urls.append(resolved.url)
+            }
+        }
+        return urls
     }
 
     /// Текущая позиция воспроизведения (для синхронизации аудио).
@@ -264,7 +267,7 @@ final class PreviewRenderer {
         let clamped = min(max(time, 0), timelineDuration())
         pausedTime = clamped
         syncAudio(to: clamped)
-        onFrame?(clamped, frame(at: clamped) ?? NSImage())
+        requestFrame(at: clamped)
     }
 
     func timelineDuration() -> Double {
@@ -314,22 +317,47 @@ final class PreviewRenderer {
         if time >= total {
             pause()
             pausedTime = 0
-            onFrame?(total, frame(at: max(total - 0.001, 0)) ?? NSImage())
+            requestFrame(at: max(total - 0.001, 0))
             return
         }
-        onFrame?(time, frame(at: time) ?? NSImage())
+        requestFrame(at: time)
     }
 
-    private func frame(at time: Double) -> NSImage? {
-        guard let renderer else { return nil }
-        do {
-            let ciImage = try renderer.makeFrame(at: time, timeline: timeline, project: project)
-            let cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent)
-            guard let cgImage else { return nil }
-            return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
-        } catch {
-            onError?(error.localizedDescription)
-            return nil
+    /// Рендерит кадр на фоновой очереди (с коалесценцией: если кадр ещё
+    /// рендерится — запоминаем новейший запрошенный момент и рендерим его
+    /// следующим, чтобы не накапливать очередь).
+    private func requestFrame(at time: Double) {
+        guard let renderer else { return }
+        if isRendering {
+            pendingTime = time
+            return
+        }
+        isRendering = true
+        let timeline = timeline
+        let project = project
+        let ciContext = ciContext
+        let queue = renderQueue
+        queue.async { [weak self] in
+            var image: NSImage?
+            var errMsg: String?
+            do {
+                let ci = try renderer.makeFrame(at: time, timeline: timeline, project: project)
+                if let cg = ciContext.createCGImage(ci, from: ci.extent) {
+                    image = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+                }
+            } catch {
+                errMsg = error.localizedDescription
+            }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.isRendering = false
+                if let next = self.pendingTime {
+                    self.pendingTime = nil
+                    self.requestFrame(at: next)
+                }
+                if let errMsg { self.onError?(errMsg) }
+                if let image { self.onFrame?(time, image) }
+            }
         }
     }
 }

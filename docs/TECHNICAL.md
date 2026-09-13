@@ -28,7 +28,8 @@ JSON (Codable, `SlideshowProject`). Ключевые поля:
 - `defaultPhotoDuration`, `transitionDuration`, `isKenBurnsEnabled`;
 - `exportSettings` (codec h264/h265, разрешение, fps, качество);
 - `aspectRatio` (16:9 / 4:3 / 9:16 / 1:1);
-- `music` (источник: пользовательский файл по ссылке или none; громкость);
+- `music` (источник: плейлист пользовательских файлов или none; громкость,
+  ducking);
 - `slides: [MediaReference]`.
 
 `MediaReference` хранит: тип (`photo`/`video`), base64 security-scoped bookmark,
@@ -107,9 +108,12 @@ JSON (Codable, `SlideshowProject`). Ключевые поля:
 
 
 ### 4.5 Аудио
-`AudioTrackMixer.makeProjectAudioComposition`: музыка на фото-интервалах (fade 2 c
-вокруг видео), зацикливание/обрезка под длительность; видео-слайды сохраняют
-собственный звук.
+`AudioTrackMixer.makeProjectAudioComposition`: музыка на фото-интервалах (fade 1 c
+вокруг видео), **плейлист из нескольких треков** проигрывается последовательно по
+кругу; при включённом ducking музыка дополнительно звучит на видео-интервалах с
+приглушённой громкостью (`MusicSettings.duckingLevel`); видео-слайды сохраняют
+собственный звук. Источник — `MusicSource.userFiles([MediaAudioReference])`
+(обратносовместим с одиночным `userFile`).
 
 ## 5. Миниатюры
 `ThumbnailCache` (memory NSCache + диск `~/Library/Caches/Lumislide/Thumbnails/`).
@@ -118,10 +122,15 @@ JSON (Codable, `SlideshowProject`). Ключевые поля:
 
 ## 6. UI
 - Сетка слайдов — `NSCollectionView` (drag&drop reorder) внутри
-  `NSViewRepresentable`.
-- Вспомогательные окна (Просмотр/Экспорт/Свойства/Справка) — **по одному
-  экземпляру** (`AppWindowsController`): повторное открытие активирует окно или
-  пересоздаёт контент для другого проекта.
+  `NSViewRepresentable`; мультивыделение (`ThumbnailCollectionView`): Cmd+клик —
+  отдельная карточка, Shift+клик — диапазон от якоря. Выделение сохраняется по
+  id слайдов при `reloadData()` (иначе сбрасывалось при подгрузке миниатюр).
+- Вспомогательные окна (Просмотр/Экспорт/Свойства/Настройки/Справка) —
+  **по одному экземпляру** (`AppWindowsController`): повторное открытие
+  активирует окно или пересоздаёт контент для другого проекта.
+  Окно настроек открывается своим `NSWindow` (а не SwiftUI-сценой `Settings`):
+  при кастомном `@NSApplicationDelegateAdaptor` responder-chain действие
+  `showSettingsWindow:` не доходит до обработчика SwiftUI.
 - Главное меню локализуется вручную (`AppMenuController`), т.к. SwiftUI не
   переводит системное меню по переключателю языка. SwiftUI может перезаписать
   `NSApp.mainMenu` своим (англ., без File/Edit) в любой момент — watchdog раз в
@@ -140,4 +149,4 @@ JSON (Codable, `SlideshowProject`). Ключевые поля:
 ## 9. Известные ограничения (v1)
 - Видео-кадры: `AVAssetImageGenerator` с seek на каждый кадр (план — `AVAssetReader`).
 - Blur-фон видео пересчитывается на каждый кадр.
-- Встроенной библиотеки музыки нет (только пользовательские файлы).
+- Встроенной библиотеки музыки нет (только пользовательские файлы-плейлист).

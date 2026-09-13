@@ -17,6 +17,9 @@ final class AppMenuController: NSObject {
     /// Последнее установленное нами меню (для защиты от перезаписи SwiftUI).
     private var currentMainMenu: NSMenu?
     private var observers: [NSObjectProtocol] = []
+    /// Пункты меню Undo/Redo (обновляем доступность по store.canUndo/canRedo).
+    private weak var undoItem: NSMenuItem?
+    private weak var redoItem: NSMenuItem?
     /// Watchdog: SwiftUI может перезаписать mainMenu в ЛЮБОЙ момент (не только
     /// при запуске) — периодически возвращаем своё меню.
     private var watchdog: Timer?
@@ -26,6 +29,9 @@ final class AppMenuController: NSObject {
     func configure(store: ProjectsStore, settings: AppSettings) {
         self.store = store
         self.settings = settings
+        storeCancellable = store.objectWillChange.sink { [weak self] _ in
+            Task { @MainActor in self?.updateUndoMenuState() }
+        }
         cancellable = settings.objectWillChange.sink { [weak self] _ in
             Task { @MainActor in
                 guard let self, let current = self.settings?.language else { return }
@@ -37,6 +43,9 @@ final class AppMenuController: NSObject {
             }
         }
     }
+
+    /// Подписка на изменения проекта — обновляет доступность Undo/Redo.
+    private var storeCancellable: AnyCancellable?
 
     /// Устанавливает меню (вызывается после запуска приложения).
     func install() {
@@ -175,12 +184,34 @@ final class AppMenuController: NSObject {
         return menu
     }
 
+    /// Cmd+Z/Cmd+Shift+Z: при редактировании текста — стандартный undo поля,
+    /// иначе — отмена/повтор изменения проекта.
+    @objc private func undoAction(_ sender: Any?) {
+        if NSApp.sendAction(Selector(("undo:")), to: nil, from: sender) { return }
+        store?.undo()
+    }
+
+    @objc private func redoAction(_ sender: Any?) {
+        if NSApp.sendAction(Selector(("redo:")), to: nil, from: sender) { return }
+        store?.redo()
+    }
+
+    private func updateUndoMenuState() {
+        undoItem?.isEnabled = store?.canUndo == true
+        redoItem?.isEnabled = store?.canRedo == true
+    }
+
     private func editMenu() -> NSMenu {
         let menu = NSMenu()
-        add(menu, L10n.text(.undo), Selector(("undo:")), nil, "z")
-        let redo = NSMenuItem(title: L10n.text(.redo), action: Selector(("redo:")), keyEquivalent: "z")
+        let undo = NSMenuItem(title: L10n.text(.undo), action: #selector(undoAction(_:)), keyEquivalent: "z")
+        undo.target = self
+        menu.addItem(undo)
+        undoItem = undo
+        let redo = NSMenuItem(title: L10n.text(.redo), action: #selector(redoAction(_:)), keyEquivalent: "z")
         redo.keyEquivalentModifierMask = [.command, .shift]
+        redo.target = self
         menu.addItem(redo)
+        redoItem = redo
         menu.addItem(.separator())
         add(menu, L10n.text(.cut), Selector(("cut:")), nil, "x")
         add(menu, L10n.text(.copy), Selector(("copy:")), nil, "c")
@@ -238,7 +269,11 @@ final class AppMenuController: NSObject {
     }
 
     @objc private func showSettings() {
-        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        // Собственное окно настроек (см. AppWindowsController.openSettings):
+        // responder-chain действие showSettingsWindow: не работает при
+        // кастомном @NSApplicationDelegateAdaptor.
+        guard let settings else { return }
+        AppWindowsController.openSettings(settings: settings)
     }
 
     @objc private func hideApp() { NSApp.hide(nil) }

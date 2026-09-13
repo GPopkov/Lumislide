@@ -155,15 +155,15 @@ public final class SlideshowExporter: @unchecked Sendable {
         do {
             try writeVideoTrack(to: tempVideoURL, timeline: timeline, totalFrames: totalFrames)
 
-            // Удерживаем держатель security-scoped доступа к музыке на всё
+            // Удерживаем держатели security-scoped доступа к музыке на всё
             // время построения аудио-композиции (иначе доступ закроется
-            // сразу и AVURLAsset не сможет прочитать файл в sandbox).
-            let music = resolveMusicURL()
-            let musicHolder = music?.accessHolder
+            // сразу и AVURLAsset не сможет прочитать файлы в sandbox).
+            let music = resolveMusicURLs()
+            let musicHolders = music.map { $0.accessHolder }
             let audioResult = try AudioTrackMixer.makeProjectAudioComposition(
                 project: project,
                 timeline: timeline,
-                musicURL: music?.url
+                musicURLs: music.map { $0.url }
             )
 
             if audioResult.audioMix != nil {
@@ -342,11 +342,16 @@ public final class SlideshowExporter: @unchecked Sendable {
         }
     }
 
-    /// Возвращает музыку проекта, если выбран пользовательский трек.
-    /// Держатель security-scoped доступа должен удерживаться вызывающим.
-    private func resolveMusicURL() -> ResolvedMediaFile? {
-        guard case .userFile(let ref) = project.music.source else { return nil }
-        return try? BookmarkResolver.resolve(ref.bookmarkData)
+    /// Возвращает плейлист музыки проекта (пользовательские треки).
+    /// Держатели security-scoped доступа должны удерживаться вызывающим.
+    private func resolveMusicURLs() -> [ResolvedMediaFile] {
+        var result: [ResolvedMediaFile] = []
+        for ref in project.music.source?.trackReferences ?? [] {
+            if let resolved = try? BookmarkResolver.resolve(ref.bookmarkData) {
+                result.append(resolved)
+            }
+        }
+        return result
     }
 
     // MARK: - Валидация
@@ -373,16 +378,7 @@ public final class SlideshowExporter: @unchecked Sendable {
     }
 
     private func resolveVideoDurations() throws -> [Int: Double] {
-        var result: [Int: Double] = [:]
-        for (index, slide) in project.slides.enumerated() where slide.kind == .video {
-            let resolved = try MediaResolver.resolveWithAccess(slide)
-            // Держатель security-scoped доступа передаём источнику, чтобы файл
-            // оставался доступным на всё время жизни источника (в sandbox
-            // доступ закрывается сразу после резолвинга без держателя).
-            let source = try VideoFrameSource(url: resolved.url, accessHolder: resolved.accessHolder)
-            result[index] = source.duration
-        }
-        return result
+        MediaDurationResolver.resolveVideoDurations(project: project)
     }
 
     private func timelineDuration(_ timeline: [SlideTimelineItem]) -> Double {

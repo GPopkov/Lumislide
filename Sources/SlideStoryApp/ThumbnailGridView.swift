@@ -38,10 +38,10 @@ struct ThumbnailGridView: NSViewRepresentable {
         layout.minimumLineSpacing = 12
         layout.sectionInset = NSEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
 
-        let collectionView = NSCollectionView()
+        let collectionView = ThumbnailCollectionView()
         collectionView.collectionViewLayout = layout
         collectionView.isSelectable = true
-        collectionView.allowsMultipleSelection = false
+        collectionView.allowsMultipleSelection = true
         collectionView.backgroundColors = [.clear]
         collectionView.delegate = context.coordinator
         collectionView.dataSource = context.coordinator
@@ -55,6 +55,9 @@ struct ThumbnailGridView: NSViewRepresentable {
 
         context.coordinator.collectionView = collectionView
         context.coordinator.updateSlides(project.slides)
+        collectionView.onDeleteKey = { [weak coordinator = context.coordinator] in
+            coordinator?.deleteSelectedAction(nil)
+        }
         return scrollView
     }
 
@@ -95,12 +98,29 @@ struct ThumbnailGridView: NSViewRepresentable {
         }
 
         func updateSlides(_ slides: [MediaReference]) {
+            // Смена проекта/порядка — якорь диапазона больше не актуален.
+            if self.slides.first?.id != slides.first?.id || slides.isEmpty {
+                (collectionView as? ThumbnailCollectionView)?.resetSelectionAnchor()
+            }
             self.slides = slides
         }
 
         func reloadIfNeeded() {
             guard let collectionView, !isReloading else { return }
+            // ВАЖНО: reloadData() сбрасывает selectionIndexPaths. Без
+            // сохранения выделения мультивыбор «терялся» при каждой
+            // подгрузке миниатюры или изменении проекта. Запоминаем id
+            // выделенных слайдов и восстанавливаем выделение после reload.
+            let selected = selectedIDs()
+            isReloading = true
             collectionView.reloadData()
+            isReloading = false
+            guard !selected.isEmpty else { return }
+            var paths = Set<IndexPath>()
+            for (index, slide) in slides.enumerated() where selected.contains(slide.id) {
+                paths.insert(IndexPath(item: index, section: 0))
+            }
+            collectionView.selectionIndexPaths = paths
         }
 
         // MARK: DataSource
@@ -361,10 +381,46 @@ struct ThumbnailGridView: NSViewRepresentable {
 
             menu.addItem(.separator())
 
+            let durationItem = NSMenuItem(title: L10n.text(.slideDuration), action: #selector(setSlideDuration), keyEquivalent: "")
+            durationItem.target = self
+            durationItem.representedObject = slide.id
+            menu.addItem(durationItem)
+
+            if slide.kind == .video {
+                let fullItem = NSMenuItem(title: L10n.text(.alwaysShowFullVideo), action: #selector(togglePlayFullVideo), keyEquivalent: "")
+                fullItem.target = self
+                fullItem.representedObject = slide.id
+                fullItem.state = slide.playFullVideo ? .on : .off
+                menu.addItem(fullItem)
+            }
+
+            menu.addItem(.separator())
+
             let relink = NSMenuItem(title: L10n.text(.relinkFile), action: #selector(relink), keyEquivalent: "")
             relink.target = self
             relink.representedObject = slide.id
             menu.addItem(relink)
+
+            menu.addItem(.separator())
+
+            let selected = selectedIDs()
+            if selected.count > 1 {
+                let deleteSelected = NSMenuItem(
+                    title: "\(L10n.text(.delete)) (\(selected.count))",
+                    action: #selector(deleteSelectedAction),
+                    keyEquivalent: ""
+                )
+                deleteSelected.target = self
+                menu.addItem(deleteSelected)
+            }
+            let toFront = NSMenuItem(title: L10n.text(.moveToBeginning), action: #selector(moveSelectedToFront), keyEquivalent: "")
+            toFront.target = self
+            menu.addItem(toFront)
+            let toBack = NSMenuItem(title: L10n.text(.moveToEnd), action: #selector(moveSelectedToBack), keyEquivalent: "")
+            toBack.target = self
+            menu.addItem(toBack)
+
+            menu.addItem(.separator())
 
             let delete = NSMenuItem(title: L10n.text(.delete), action: #selector(deleteSlide), keyEquivalent: "\u{8}")
             delete.target = self
@@ -419,9 +475,53 @@ struct ThumbnailGridView: NSViewRepresentable {
             }
         }
 
+        @objc private func setSlideDuration(_ sender: NSMenuItem) {
+            guard let id = sender.representedObject as? UUID else { return }
+            let alert = NSAlert()
+            alert.messageText = L10n.text(.slideDuration)
+            alert.informativeText = L10n.text(.durationSecondsPrompt)
+            alert.addButton(withTitle: L10n.text(.ok))
+            alert.addButton(withTitle: L10n.text(.cancel))
+            let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 220, height: 24))
+            let current = store.currentProject?.slides.first(where: { $0.id == id })?.customDuration
+            field.stringValue = current.map { String($0) } ?? ""
+            alert.accessoryView = field
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            let text = field.stringValue.trimmingCharacters(in: .whitespaces)
+            let value = text.isEmpty ? nil : Double(text)
+            store.updateSlide(id: id) { $0.customDuration = value }
+        }
+
+        @objc private func togglePlayFullVideo(_ sender: NSMenuItem) {
+            guard let id = sender.representedObject as? UUID else { return }
+            store.updateSlide(id: id) { slide in
+                slide.playFullVideo.toggle()
+            }
+        }
+
         @objc private func relink(_ sender: NSMenuItem) {
             guard let id = sender.representedObject as? UUID else { return }
             store.relinkSlide(id: id)
+        }
+
+        @objc func deleteSelectedAction(_ sender: Any?) {
+            store.removeSlides(ids: selectedIDs())
+        }
+
+        @objc func moveSelectedToFront(_ sender: Any?) {
+            store.moveSlides(ids: selectedIDs(), toFront: true)
+        }
+
+        @objc func moveSelectedToBack(_ sender: Any?) {
+            store.moveSlides(ids: selectedIDs(), toFront: false)
+        }
+
+        private func selectedIDs() -> [UUID] {
+            guard let collectionView else { return [] }
+            let indexes = collectionView.selectionIndexPaths.map(\.item).sorted()
+            return indexes.compactMap { i in
+                slides.indices.contains(i) ? slides[i].id : nil
+            }
         }
 
         @objc private func deleteSlide(_ sender: NSMenuItem) {
@@ -430,3 +530,77 @@ struct ThumbnailGridView: NSViewRepresentable {
         }
     }
 
+
+
+/// NSCollectionView с общепринятой техникой мультивыделения:
+/// - обычный клик — одиночное выделение;
+/// - Cmd+клик — добавить/убрать отдельную карточку;
+/// - Shift+клик — выделить диапазон от «якоря» до клика (Cmd+Shift — добавить
+///   диапазон к текущему выделению);
+/// - Delete/Backspace — batch-удаление выделенного.
+final class ThumbnailCollectionView: NSCollectionView {
+    var onDeleteKey: (() -> Void)?
+
+    /// «Якорь» диапазона — индекс последнего одиночного/Cmd-клика.
+    private var selectionAnchor: Int?
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 51 || event.keyCode == 117 {
+            onDeleteKey?()
+            return
+        }
+        super.keyDown(with: event)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        // Клик по карточке также делает сетку first responder,
+        // чтобы сразу работала клавиша Delete.
+        window?.makeFirstResponder(self)
+
+        let point = convert(event.locationInWindow, from: nil)
+        guard let indexPath = indexPathForItem(at: point) else {
+            // Клик по пустому месту — обычное поведение (снять выделение).
+            selectionAnchor = nil
+            super.mouseDown(with: event)
+            return
+        }
+
+        let index = indexPath.item
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let path = IndexPath(item: index, section: 0)
+
+        // Shift+клик — диапазон от якоря (Cmd+Shift — в дополнение к выделению).
+        if flags.contains(.shift), let anchor = selectionAnchor {
+            let lower = min(anchor, index)
+            let upper = max(anchor, index)
+            var paths = flags.contains(.command) ? selectionIndexPaths : Set<IndexPath>()
+            for i in lower...upper {
+                paths.insert(IndexPath(item: i, section: 0))
+            }
+            selectionIndexPaths = paths
+            return
+        }
+
+        // Cmd+клик — переключить отдельную карточку.
+        if flags.contains(.command) {
+            var paths = selectionIndexPaths
+            if paths.contains(path) {
+                paths.remove(path)
+            } else {
+                paths.insert(path)
+            }
+            selectionIndexPaths = paths
+            selectionAnchor = index
+            return
+        }
+
+        // Обычный клик — одиночное выделение (и старт drag&drop reorder).
+        selectionAnchor = index
+        super.mouseDown(with: event)
+    }
+
+    /// Сбрасывает якорь диапазона (например, после открытия другого проекта).
+    func resetSelectionAnchor() {
+        selectionAnchor = nil
+    }
+}

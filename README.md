@@ -31,13 +31,18 @@ A native macOS app that turns your photos and videos into an MP4 slideshow.
   specific transition per slide (right-click a card).
 - **Ken Burns** slow zoom/pan on photos with **face-aware focus**.
 - **Titles** on photos: text, size, color, position.
-- **Background music** on photo intervals (2 s fade around videos); video slides
-  keep their own audio.
+- **Background music** on photo intervals (1 s fade around videos); a **playlist
+  of several tracks** loops in order, with **ducking** under video audio; video
+  slides keep their own audio.
+- **Per-slide duration** (right-click a card) and **Undo/Redo** for project edits.
+- **Multi-select** cards: Cmd-click toggles one card, Shift-click selects a range,
+  with batch delete (Delete key / context menu) and move-to-start/end.
 - **Aspect ratios**: 16:9, 4:3, 9:16, 1:1. Media is fitted (no cropping); empty
   space is filled with a blurred copy of the same image.
 - **Live preview** window — the same pipeline as export, at lower resolution.
 - **Export** to MP4 (H.264 or H.265) with configurable resolution / frame rate /
-  quality, progress, cancellation and an estimated output size.
+  quality, built-in presets (720p / 1080p / 4K / Instagram) plus a user preset
+  list, progress, cancellation and an estimated output size.
 - **Localization**: English and Russian (the main menu and Help follow the language).
 
 ### Requirements
@@ -124,14 +129,20 @@ to your media — the files themselves stay where they are.
   слайда можно задать свой (ПКМ по карточке).
 - **Кен Бёрнс** — медленный зум/панорама с **фокусом на лица**.
 - **Титры** на фото: текст, размер, цвет, положение.
-- **Фоновая музыка** на фото-интервалах (fade 2 c вокруг видео); на видео-слайдах
-  остаётся собственная звуковая дорожка.
+- **Фоновая музыка** на фото-интервалах (fade 1 c вокруг видео); **плейлист из
+  нескольких треков** проигрывается по кругу, с **ducking** под звук видео; на
+  видео-слайдах остаётся собственная дорожка.
+- **Длительность слайда** (ПКМ по карточке) и **Undo/Redo** для правок проекта.
+- **Множественное выделение** карточек: Cmd+клик — отдельная карточка,
+  Shift+клик — диапазон; массовое удаление (клавиша Delete / ПКМ) и перемещение
+  в начало/конец.
 - **Пропорции кадра**: 16:9, 4:3, 9:16, 1:1. Медиа вписывается без обрезки;
   пустые поля заполняются размытой копией того же изображения.
 - **Окно предпросмотра** — тот же конвейер, что и при экспорте, в пониженном
   разрешении.
 - **Экспорт** в MP4 (H.264 или H.265): разрешение / частота кадров / качество,
-  прогресс, отмена и оценка размера файла.
+  встроенные пресеты (720p / 1080p / 4K / Instagram) и список пользовательских
+  разрешений, прогресс, отмена и оценка размера файла.
 - **Локализация**: русский и английский (меню и справка следуют языку).
 
 ### Системные требования

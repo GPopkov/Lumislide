@@ -51,24 +51,28 @@ public enum AspectRatio: String, Codable, CaseIterable, Sendable {
                 ResolutionPreset(id: "720p", size: CGSize(width: 1280, height: 720)),
                 ResolutionPreset(id: "1080p", size: CGSize(width: 1920, height: 1080)),
                 ResolutionPreset(id: "4K", size: CGSize(width: 3840, height: 2160)),
+                ResolutionPreset(id: "Instagram", size: CGSize(width: 1080, height: 608)),
             ]
         case .landscape4x3:
             return [
                 ResolutionPreset(id: "720p", size: CGSize(width: 960, height: 720)),
                 ResolutionPreset(id: "1080p", size: CGSize(width: 1440, height: 1080)),
                 ResolutionPreset(id: "4K", size: CGSize(width: 2880, height: 2160)),
+                ResolutionPreset(id: "Instagram", size: CGSize(width: 1080, height: 810)),
             ]
         case .portrait9x16:
             return [
                 ResolutionPreset(id: "720p", size: CGSize(width: 720, height: 1280)),
                 ResolutionPreset(id: "1080p", size: CGSize(width: 1080, height: 1920)),
                 ResolutionPreset(id: "4K", size: CGSize(width: 2160, height: 3840)),
+                ResolutionPreset(id: "Instagram", size: CGSize(width: 1080, height: 1920)),
             ]
         case .square1x1:
             return [
                 ResolutionPreset(id: "720p", size: CGSize(width: 720, height: 720)),
                 ResolutionPreset(id: "1080p", size: CGSize(width: 1080, height: 1080)),
                 ResolutionPreset(id: "4K", size: CGSize(width: 2160, height: 2160)),
+                ResolutionPreset(id: "Instagram", size: CGSize(width: 1080, height: 1080)),
             ]
         }
     }

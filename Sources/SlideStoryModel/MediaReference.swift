@@ -80,6 +80,14 @@ public struct MediaReference: Codable, Identifiable, Equatable, Sendable {
     /// Кэш длительности видео-слайда (секунды), заполняется рендерером.
     public var cachedVideoDuration: Double?
 
+    /// Per-slide длительность (секунды). nil — значение по умолчанию
+    /// (для фото — defaultPhotoDuration, для видео — фактическая длительность).
+    public var customDuration: Double?
+
+    /// Для видео: показывать ролик целиком (по умолчанию true).
+    /// Если false и задана customDuration — видео обрезается до неё.
+    public var playFullVideo: Bool
+
     /// Идентификатор PHAsset в медиатеке Фото (если слайд взят из Фото).
     /// В этом случае `bookmarkData` не используется: контент экспортируется
     /// во временный файл в момент предпросмотра/экспорта (без копий).
@@ -100,7 +108,9 @@ public struct MediaReference: Codable, Identifiable, Equatable, Sendable {
         faceRegions: [FaceRegion] = [],
         faceRegionsEpoch: Int? = nil,
         cachedVideoDuration: Double? = nil,
-        photosLocalIdentifier: String? = nil
+        photosLocalIdentifier: String? = nil,
+        customDuration: Double? = nil,
+        playFullVideo: Bool = true
     ) {
         self.id = id
         self.kind = kind
@@ -113,6 +123,8 @@ public struct MediaReference: Codable, Identifiable, Equatable, Sendable {
         self.faceRegionsEpoch = faceRegionsEpoch
         self.cachedVideoDuration = cachedVideoDuration
         self.photosLocalIdentifier = photosLocalIdentifier
+        self.customDuration = customDuration
+        self.playFullVideo = playFullVideo
     }
 
     /// Является ли слайд ссылкой на ассет медиатеки Фото.
@@ -131,4 +143,45 @@ public struct LivePhotoPair: Sendable {
     public let stillBookmarkData: String
     public let videoBookmarkData: String
     public let displayName: String
+}
+extension MediaReference {
+    private enum CodingKeys: String, CodingKey {
+        case id, kind, bookmarkData, displayName, transitionOverride, titleOverlay,
+             isKenBurnsDisabled, faceRegions, faceRegionsEpoch, cachedVideoDuration,
+             photosLocalIdentifier, customDuration, playFullVideo
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(kind, forKey: .kind)
+        try c.encode(bookmarkData, forKey: .bookmarkData)
+        try c.encode(displayName, forKey: .displayName)
+        try c.encodeIfPresent(transitionOverride, forKey: .transitionOverride)
+        try c.encodeIfPresent(titleOverlay, forKey: .titleOverlay)
+        try c.encode(isKenBurnsDisabled, forKey: .isKenBurnsDisabled)
+        try c.encode(faceRegions, forKey: .faceRegions)
+        try c.encodeIfPresent(faceRegionsEpoch, forKey: .faceRegionsEpoch)
+        try c.encodeIfPresent(cachedVideoDuration, forKey: .cachedVideoDuration)
+        try c.encodeIfPresent(photosLocalIdentifier, forKey: .photosLocalIdentifier)
+        try c.encodeIfPresent(customDuration, forKey: .customDuration)
+        try c.encode(playFullVideo, forKey: .playFullVideo)
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        kind = try c.decode(MediaKind.self, forKey: .kind)
+        bookmarkData = try c.decode(String.self, forKey: .bookmarkData)
+        displayName = try c.decode(String.self, forKey: .displayName)
+        transitionOverride = try c.decodeIfPresent(TransitionType.self, forKey: .transitionOverride)
+        titleOverlay = try c.decodeIfPresent(TitleOverlay.self, forKey: .titleOverlay)
+        isKenBurnsDisabled = try c.decodeIfPresent(Bool.self, forKey: .isKenBurnsDisabled) ?? false
+        faceRegions = try c.decodeIfPresent([FaceRegion].self, forKey: .faceRegions) ?? []
+        faceRegionsEpoch = try c.decodeIfPresent(Int.self, forKey: .faceRegionsEpoch)
+        cachedVideoDuration = try c.decodeIfPresent(Double.self, forKey: .cachedVideoDuration)
+        photosLocalIdentifier = try c.decodeIfPresent(String.self, forKey: .photosLocalIdentifier)
+        customDuration = try c.decodeIfPresent(Double.self, forKey: .customDuration)
+        playFullVideo = try c.decodeIfPresent(Bool.self, forKey: .playFullVideo) ?? true
+    }
 }

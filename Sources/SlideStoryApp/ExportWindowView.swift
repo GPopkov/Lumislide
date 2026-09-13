@@ -19,6 +19,8 @@ struct ExportWindowView: View {
     @State private var codec: VideoCodec = .h264
     @State private var aspectRatio: AspectRatio = .landscape16x9
     @State private var presetID: String = "1080p"
+    /// Пользовательские разрешения (строки "WxH", UserDefaults).
+    @State private var customResolutions: [String] = []
     @State private var frameRate: FrameRate = .fps30
     @State private var quality: VideoQuality = .high
 
@@ -38,12 +40,31 @@ struct ExportWindowView: View {
     /// Отформатированная оценка размера («≈ 128 МБ»), пусто — пока не посчитана.
     @State private var estimatedSizeText: String = ""
 
-    private var presets: [AspectRatio.ResolutionPreset] {
-        aspectRatio.presets
+    private struct Preset: Identifiable {
+        let id: String
+        let size: CGSize
+        let isCustom: Bool
+    }
+
+    private static let customResolutionsKey = "app.customResolutions"
+
+    /// Объединённый список: встроенные пресеты + пользовательские.
+    private var presets: [Preset] {
+        var list = aspectRatio.presets.map { Preset(id: $0.id, size: $0.size, isCustom: false) }
+        for raw in customResolutions {
+            if let size = Self.parseResolution(raw) {
+                list.append(Preset(id: "custom-\(raw)", size: size, isCustom: true))
+            }
+        }
+        return list
     }
 
     private var selectedSize: CGSize {
         presets.first(where: { $0.id == presetID })?.size ?? .init(width: 1920, height: 1080)
+    }
+
+    private var selectedIsCustom: Bool {
+        presets.first(where: { $0.id == presetID })?.isCustom == true
     }
 
     /// Заголовок главной кнопки окна экспорта.
@@ -77,12 +98,24 @@ struct ExportWindowView: View {
                 }
 
                 Picker(L10n.text(.resolution), selection: $presetID) {
-                    ForEach(presets, id: \.id) { preset in
-                        Text("\(preset.id) (\(Int(preset.size.width))×\(Int(preset.size.height)))")
+                    ForEach(presets) { preset in
+                        Text(preset.isCustom
+                            ? "\(Int(preset.size.width))×\(Int(preset.size.height))"
+                            : "\(preset.id) (\(Int(preset.size.width))×\(Int(preset.size.height)))")
                             .tag(preset.id)
                     }
                 }
                 .onChange(of: presetID) { _, _ in updateEstimatedSize() }
+
+                HStack {
+                    Button(L10n.text(.addCustomResolution)) { addCustomResolution() }
+                    Button {
+                        removeCustomResolution()
+                    } label: {
+                        Image(systemName: "minus.circle")
+                    }
+                    .disabled(!selectedIsCustom)
+                }
 
                 Picker(L10n.text(.frameRate), selection: $frameRate) {
                     Text("24 fps").tag(FrameRate.fps24)
@@ -158,6 +191,7 @@ struct ExportWindowView: View {
             frameRate = project.exportSettings.frameRate
             quality = project.exportSettings.quality
             presetID = aspectRatio.presets[1].id
+            customResolutions = UserDefaults.standard.stringArray(forKey: Self.customResolutionsKey) ?? []
 
             // Длительность проекта (резолвинг видео-файлов может занять
             // время) — считаем в фоне, чтобы не блокировать окно.
@@ -171,6 +205,46 @@ struct ExportWindowView: View {
             }
         }
         .onDisappear { exporter?.cancel() }
+    }
+
+    // MARK: - Пользовательские разрешения
+
+    private func addCustomResolution() {
+        let alert = NSAlert()
+        alert.messageText = L10n.text(.customResolution)
+        alert.informativeText = L10n.text(.resolutionPrompt)
+        alert.addButton(withTitle: L10n.text(.ok))
+        alert.addButton(withTitle: L10n.text(.cancel))
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
+        field.placeholderString = "1080×1350"
+        alert.accessoryView = field
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let text = field.stringValue
+            .replacingOccurrences(of: "×", with: "x")
+            .replacingOccurrences(of: "X", with: "x")
+            .replacingOccurrences(of: "*", with: "x")
+        let parts = text.split(separator: "x").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
+        guard parts.count == 2, parts[0] > 0, parts[1] > 0 else { return }
+        let raw = "\(parts[0])x\(parts[1])"
+        if !customResolutions.contains(raw) {
+            customResolutions.append(raw)
+            UserDefaults.standard.set(customResolutions, forKey: Self.customResolutionsKey)
+        }
+        presetID = "custom-\(raw)"
+    }
+
+    private func removeCustomResolution() {
+        guard selectedIsCustom else { return }
+        let raw = String(presetID.dropFirst("custom-".count))
+        customResolutions.removeAll { $0 == raw }
+        UserDefaults.standard.set(customResolutions, forKey: Self.customResolutionsKey)
+        presetID = aspectRatio.presets[1].id
+    }
+
+    private static func parseResolution(_ raw: String) -> CGSize? {
+        let parts = raw.split(separator: "x").compactMap { Int($0) }
+        guard parts.count == 2, parts[0] > 0, parts[1] > 0 else { return nil }
+        return CGSize(width: parts[0], height: parts[1])
     }
 
     // MARK: - Оценка размера файла

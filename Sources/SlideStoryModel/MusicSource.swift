@@ -2,15 +2,66 @@ import Foundation
 
 /// Источник фоновой музыки.
 ///
-/// В v1 поставляется только пользовательская музыка по ссылке
-/// (встроенная библиотека — будущая поставка, см. раздел 15 ТЗ).
-public enum MusicSource: Codable, Equatable, Sendable {
-    /// Пользовательский аудиофайл, подключённый по security-scoped bookmark.
-    case userFile(MediaAudioReference)
+/// Поддерживается плейлист из нескольких пользовательских аудиофайлов
+/// (проигрываются последовательно по кругу). Встроенная библиотека —
+/// будущая поставка.
+public enum MusicSource: Equatable, Sendable {
+    /// Пользовательские аудиофайлы, подключённые по security-scoped bookmark.
+    case userFiles([MediaAudioReference])
 
-    /// Встроенный трек из библиотеки (резервируется на будущее;
-    /// в v1 библиотека не поставляется).
+    /// Встроенный трек из библиотеки (резервируется на будущее).
     case builtIn(trackID: String)
+
+    /// Ссылки на пользовательские треки (пусто для builtIn).
+    public var trackReferences: [MediaAudioReference] {
+        if case .userFiles(let tracks) = self { return tracks }
+        return []
+    }
+
+    /// Есть ли хотя бы один пользовательский трек.
+    public var isEmpty: Bool {
+        if case .userFiles(let tracks) = self { return tracks.isEmpty }
+        return false
+    }
+}
+
+extension MusicSource: Codable {
+    private enum CodingKeys: String, CodingKey {
+        case type, tracks, trackID, audio
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .userFiles(let tracks):
+            try container.encode("userFiles", forKey: .type)
+            try container.encode(tracks, forKey: .tracks)
+        case .builtIn(let trackID):
+            try container.encode("builtIn", forKey: .type)
+            try container.encode(trackID, forKey: .trackID)
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let type = try container.decodeIfPresent(String.self, forKey: .type)
+        switch type {
+        case "builtIn":
+            self = .builtIn(trackID: try container.decode(String.self, forKey: .trackID))
+        case "userFiles":
+            self = .userFiles(try container.decode([MediaAudioReference].self, forKey: .tracks))
+        default:
+            if let single = try container.decodeIfPresent(MediaAudioReference.self, forKey: .audio) {
+                self = .userFiles([single])
+            } else if let tracks = try container.decodeIfPresent([MediaAudioReference].self, forKey: .tracks) {
+                self = .userFiles(tracks)
+            } else {
+                throw DecodingError.dataCorrupted(
+                    DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "unknown MusicSource")
+                )
+            }
+        }
+    }
 }
 
 /// Ссылка на пользовательский аудиофайл через security-scoped bookmark.
@@ -44,12 +95,25 @@ public struct MusicSettings: Codable, Equatable, Sendable {
     /// Громкость (0.0...1.0), default 0.7.
     public var volume: Double
 
-    /// Секунды плавного затухания/появления вокруг видео-слайдов.
-    public static let fadeDuration: Double = 2.0
+    /// Автоматически приглушать музыку под звуком видео (ducking).
+    public var duckingEnabled: Bool
 
-    public init(source: MusicSource? = nil, volume: Double = 0.7) {
+    /// Насколько приглушать музыку под видео (0.0...1.0, 1 = полностью).
+    public var duckingLevel: Double
+
+    /// Секунды плавного затухания/появления вокруг видео-слайдов.
+    public static let fadeDuration: Double = 1.0
+
+    public init(
+        source: MusicSource? = nil,
+        volume: Double = 0.7,
+        duckingEnabled: Bool = true,
+        duckingLevel: Double = 0.5
+    ) {
         self.source = source
         self.volume = min(max(volume, 0), 1)
+        self.duckingEnabled = duckingEnabled
+        self.duckingLevel = min(max(duckingLevel, 0), 1)
     }
 }
 
@@ -57,7 +121,7 @@ public struct MusicSettings: Codable, Equatable, Sendable {
 ///
 /// Музыка звучит только на интервалах фото-слайдов (включая переходы
 /// между двумя фото). На видео-слайдах звучит собственная дорожка видео:
-/// за 2 секунды до начала видео трек плавно затухает, после окончания
+/// за 1 секунду до начала видео трек плавно затухает, после окончания
 /// видео — плавно появляется. Если проект состоит только из видео —
 /// музыка не звучит вообще.
 public struct PhotoInterval: Codable, Equatable, Sendable {
@@ -80,21 +144,6 @@ public enum MusicTimelinePlanner {
     public static let fadeDuration: Double = MusicSettings.fadeDuration
 
     /// Вычисляет интервалы, на которых должен звучать музыкальный трек.
-    ///
-    /// Правила (по ТЗ v1.1):
-    /// - интервалы соответствуют фото-слайдам, включая переходы между
-    ///   двумя фото;
-    /// - за `fadeDuration` секунд до начала видео трек гаснет,
-    ///   во время видео звучит собственная дорожка видео,
-    ///   после видео трек снова появляется;
-    /// - если проект состоит только из видео — интервалов нет.
-    ///
-    /// - Parameters:
-    ///   - slideKinds: тип каждого слайда в порядке следования.
-    ///   - slideStartTimes: времена начала каждого слайда на таймлайне.
-    ///   - slideEndTimes: времена конца каждого слайда (после перехода).
-    ///   - transitionDurations: длительности переходов после каждого слайда.
-    /// - Returns: массив интервалов (отсортирован по start).
     public static func photoIntervals(
         slideKinds: [MediaKind],
         slideStartTimes: [Double],
@@ -112,17 +161,13 @@ public enum MusicTimelinePlanner {
 
         var index = 0
         while index < count {
-            // Пропускаем видео-слайды.
             if slideKinds[index] != .photo {
                 index += 1
                 continue
             }
 
-            // Начало фото-интервала: момент start слайда,
-            // но не раньше конца фейда после предыдущего видео.
             let start = slideStartTimes[index]
 
-            // Ищем следующий видео-слайд (или конец проекта).
             var endIndex = index
             var end = slideEndTimes[index]
             while endIndex + 1 < count && slideKinds[endIndex + 1] == .photo {
@@ -130,8 +175,6 @@ public enum MusicTimelinePlanner {
                 end = slideEndTimes[endIndex]
             }
 
-            // Если дальше есть видео — заканчиваем интервал
-            // за fadeDuration до его начала.
             if endIndex + 1 < count {
                 let videoStart = slideStartTimes[endIndex + 1]
                 end = min(end, max(start, videoStart - fadeDuration))
@@ -141,18 +184,14 @@ public enum MusicTimelinePlanner {
                 intervals.append(PhotoInterval(start: start, end: end))
             }
 
-            // Перепрыгиваем следующий видео-слайд, чтобы не создавать
-            // нулевые интервалы.
             index = endIndex + 1
             if index < count && slideKinds[index] == .video {
-                // Пропускаем видео и все последующие видео.
                 while index < count && slideKinds[index] == .video {
                     index += 1
                 }
             }
         }
 
-        // Схлопываем соседние интервалы с минимальным разрывом < 0.01 c.
         return normalize(intervals)
     }
 

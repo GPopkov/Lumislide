@@ -19,12 +19,13 @@ public enum L10n {
         // Сетка / карточки
         case automaticRandom, forceTransition, addTitle, disableKenBurns,
              relinkFile, hasTitle, transitionLabel, fileNotAvailable, video,
-             thumbnailSize, fromPhotos
+             thumbnailSize, fromPhotos, slideDuration, alwaysShowFullVideo,
+             durationSecondsPrompt, ok, moveToBeginning, moveToEnd
 
         // Свойства проекта
         case projectProperties, name, photoDuration, transitionDuration,
              kenBurnsEffect, aspectRatio, backgroundMusic, chooseAudioFile,
-             removeMusic, volume, musicPlaysOnlyDuringPhotos, close, cancel, save
+             removeMusic, volume, ducking, duckingLevel, musicPlaysOnlyDuringPhotos, close, cancel, save
 
         // Титры
         case title, text, fontSize, color, position, top, center, bottom
@@ -35,7 +36,8 @@ public enum L10n {
         // Экспорт
         case codec, resolution, frameRate, quality, ready, exporting,
              exportFinished, exportCancelled, exportFailed, cancelExport,
-             timeLeft, estimatedFileSize, approxMB, approxGB, done
+             timeLeft, estimatedFileSize, approxMB, approxGB, done,
+             addCustomResolution, customResolution, resolutionPrompt
 
         // Настройки
         case settings, projectsFolder, defaultPhotoDuration, autosave, language
@@ -74,6 +76,12 @@ public enum L10n {
             .transitionLabel: "Transition",
             .fileNotAvailable: "File not available — right-click to relink",
             .video: "video",
+            .slideDuration: "Slide Duration…",
+            .alwaysShowFullVideo: "Play Video in Full",
+            .durationSecondsPrompt: "Duration in seconds (empty = default):",
+            .ok: "OK",
+            .moveToBeginning: "Move to Beginning",
+            .moveToEnd: "Move to End",
             .thumbnailSize: "Thumbnail Size",
             .fromPhotos: "From Photos Library",
 
@@ -87,7 +95,9 @@ public enum L10n {
             .chooseAudioFile: "Choose Audio File…",
             .removeMusic: "Remove Music",
             .volume: "Volume",
-            .musicPlaysOnlyDuringPhotos: "Music plays only during photo slides (2 s fade around videos).",
+            .ducking: "Duck music under video",
+            .duckingLevel: "Ducking level",
+            .musicPlaysOnlyDuringPhotos: "Music plays only during photo slides (1 s fade around videos).",
             .close: "Close",
             .cancel: "Cancel",
             .save: "Save",
@@ -104,6 +114,9 @@ public enum L10n {
             .preparing: "Preparing…",
 
             .codec: "Codec",
+            .addCustomResolution: "Add…",
+            .customResolution: "Custom Resolution",
+            .resolutionPrompt: "Enter width and height, e.g. 1080×1350",
             .resolution: "Resolution",
             .frameRate: "Frame Rate",
             .quality: "Quality",
@@ -174,6 +187,12 @@ public enum L10n {
             .transitionLabel: "Переход",
             .fileNotAvailable: "Файл недоступен — ПКМ, чтобы переподключить",
             .video: "видео",
+            .slideDuration: "Длительность слайда…",
+            .alwaysShowFullVideo: "Показывать видео целиком",
+            .durationSecondsPrompt: "Длительность в секундах (пусто = по умолчанию):",
+            .ok: "OK",
+            .moveToBeginning: "Переместить в начало",
+            .moveToEnd: "Переместить в конец",
             .thumbnailSize: "Размер миниатюр",
             .fromPhotos: "Из медиатеки Фото",
 
@@ -187,7 +206,9 @@ public enum L10n {
             .chooseAudioFile: "Выбрать аудиофайл…",
             .removeMusic: "Убрать музыку",
             .volume: "Громкость",
-            .musicPlaysOnlyDuringPhotos: "Музыка звучит только на фото-слайдах (fade 2 c вокруг видео).",
+            .ducking: "Приглушать музыку под видео",
+            .duckingLevel: "Степень приглушения",
+            .musicPlaysOnlyDuringPhotos: "Музыка звучит только на фото-слайдах (fade 1 c вокруг видео).",
             .close: "Закрыть",
             .cancel: "Отмена",
             .save: "Сохранить",
@@ -204,6 +225,9 @@ public enum L10n {
             .preparing: "Подготовка…",
 
             .codec: "Кодек",
+            .addCustomResolution: "Добавить…",
+            .customResolution: "Пользовательское разрешение",
+            .resolutionPrompt: "Введите ширину и высоту, например 1080×1350",
             .resolution: "Разрешение",
             .frameRate: "Частота кадров",
             .quality: "Качество",

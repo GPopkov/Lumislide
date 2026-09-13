@@ -38,8 +38,23 @@ public final class ProjectsStore: ObservableObject {
     /// Сохранён ли текущий проект (для маркера «изменено»).
     @Published public var isDirty = false
 
+    /// Доступность Undo/Redo (для пунктов меню Edit).
+    @Published public var canUndo = false
+    @Published public var canRedo = false
+
+    /// Общий экземпляр store приложения. Держим как синглтон: на него
+    /// ссылается (слабо) AppMenuController, и SwiftUI не должен создавать
+    /// вторую «временную» копию (иначе store в меню становится nil).
+    public static let shared = ProjectsStore(settings: AppSettings.shared)
+
     private let settings: AppSettings
     private var lastSavedName = ""
+
+    // MARK: - Undo/Redo
+
+    private var undoStack: [SlideshowProject] = []
+    private var redoStack: [SlideshowProject] = []
+    private let undoLimit = 100
 
     public init(settings: AppSettings) {
         self.settings = settings
@@ -98,6 +113,7 @@ public final class ProjectsStore: ObservableObject {
         currentProject = project
         currentProjectURL = store.fileURL
         isDirty = false
+        resetUndoHistory()
         reloadProjects()
     }
 
@@ -168,6 +184,8 @@ public final class ProjectsStore: ObservableObject {
         reloadProjects()
         // Старые проекты: кэши лиц в устаревшей системе координат — пересчёт.
         refreshStaleFaceRegions(in: project)
+        refreshVideoDurations(in: project)
+        resetUndoHistory()
     }
 
     /// Удаляет проект с диска (и из списка, если открыт).
@@ -177,6 +195,7 @@ public final class ProjectsStore: ObservableObject {
             currentProject = nil
             currentProjectURL = nil
             isDirty = false
+            resetUndoHistory()
         }
         reloadProjects()
     }
@@ -227,6 +246,12 @@ public final class ProjectsStore: ObservableObject {
     public func mutate(_ block: (inout SlideshowProject) -> Void) {
         guard var project = currentProject else { return }
         let oldName = project.name
+
+        // Снимок ДО изменения — для Undo.
+        undoStack.append(project)
+        if undoStack.count > undoLimit { undoStack.removeFirst() }
+        redoStack.removeAll()
+
         block(&project)
 
         // При переименовании проекта синхронизируем титул авто-Intro-слайда:
@@ -245,9 +270,51 @@ public final class ProjectsStore: ObservableObject {
         project.updatedAt = Date()
         currentProject = project
         isDirty = true
+        updateUndoState()
         if settings.autosaveEnabled {
             try? saveCurrentProject()
         }
+    }
+
+    // MARK: - Undo/Redo
+
+    /// Отменяет последнее изменение проекта.
+    public func undo() {
+        guard let previous = undoStack.popLast() else { return }
+        if let current = currentProject {
+            redoStack.append(current)
+        }
+        restore(previous)
+    }
+
+    /// Повторяет отменённое изменение.
+    public func redo() {
+        guard let next = redoStack.popLast() else { return }
+        if let current = currentProject {
+            undoStack.append(current)
+        }
+        restore(next)
+    }
+
+    private func restore(_ project: SlideshowProject) {
+        currentProject = project
+        isDirty = true
+        updateUndoState()
+        if settings.autosaveEnabled {
+            try? saveCurrentProject()
+        }
+    }
+
+    private func updateUndoState() {
+        canUndo = !undoStack.isEmpty
+        canRedo = !redoStack.isEmpty
+    }
+
+    /// Сбрасывает историю Undo/Redo (после открытия/закрытия проекта).
+    private func resetUndoHistory() {
+        undoStack.removeAll()
+        redoStack.removeAll()
+        updateUndoState()
     }
 
     // MARK: - Медиа
@@ -308,6 +375,9 @@ public final class ProjectsStore: ObservableObject {
                 // чтобы Ken Burns учитывал лица при предпросмотре/экспорте.
                 for slide in newSlides where slide.kind == .photo {
                     self.precomputeFaces(for: slide.id)
+                }
+                for slide in newSlides where slide.kind == .video {
+                    self.precomputeVideoDuration(for: slide.id)
                 }
             }
         }
@@ -382,6 +452,8 @@ public final class ProjectsStore: ObservableObject {
                 // Детекция лиц для фото — заранее.
                 if kind == .photo {
                     self.precomputeFaces(for: reference.id)
+                } else if kind == .video {
+                    self.precomputeVideoDuration(for: reference.id)
                 }
             }
         }
@@ -468,7 +540,7 @@ public final class ProjectsStore: ObservableObject {
             let regions = (try? FaceDetector.detectFacesSync(inImageAt: resolved.url)) ?? []
             guard !regions.isEmpty else { return }
             Task { @MainActor in
-                self?.updateSlide(id: id) { slide in
+                self?.updateSlideCached(id: id) { slide in
                     slide.faceRegions = regions
                     slide.faceRegionsEpoch = MediaReference.currentFaceRegionsEpoch
                 }
@@ -487,8 +559,30 @@ public final class ProjectsStore: ObservableObject {
         }
     }
 
+    /// Пересчитывает отсутствующий кэш длительностей видео-слайдов.
+    private func refreshVideoDurations(in project: SlideshowProject) {
+        for slide in project.slides where slide.kind == .video && (slide.cachedVideoDuration ?? 0) <= 0 {
+            precomputeVideoDuration(for: slide.id)
+        }
+    }
+
+    /// Определяет и кэширует длительность видео-слайда в фоне.
+    public func precomputeVideoDuration(for slideID: UUID) {
+        guard let slide = currentProject?.slides.first(where: { $0.id == slideID }),
+              slide.kind == .video else { return }
+        Self.mediaQueue.async { [weak self] in
+            guard let duration = MediaDurationResolver.videoDuration(for: slide), duration > 0 else { return }
+            Task { @MainActor in
+                self?.updateSlideCached(id: slideID) { $0.cachedVideoDuration = duration }
+            }
+        }
+    }
+
     /// Serial-очередь детекции лиц: не больше одной Vision-детекции за раз.
     private static let faceDetectionQueue = DispatchQueue(label: "com.lumislide.face-detection", qos: .utility)
+
+    /// Очередь определения длительностей медиа (AVAsset) — в фоне.
+    private static let mediaQueue = DispatchQueue(label: "com.lumislide.media-duration", qos: .utility)
 
     /// Переподключает недоступный файл по новому bookmark.
     public func relinkSlide(id: UUID) {
@@ -527,6 +621,29 @@ public final class ProjectsStore: ObservableObject {
         }
     }
 
+    /// Удаляет несколько слайдов за одну операцию (одна запись в Undo).
+    public func removeSlides(ids: [UUID]) {
+        guard !ids.isEmpty else { return }
+        mutate { project in
+            project.slides.removeAll { ids.contains($0.id) }
+        }
+    }
+
+    /// Перемещает слайды с заданными id в начало или конец (batch-операция).
+    public func moveSlides(ids: [UUID], toFront: Bool) {
+        guard !ids.isEmpty else { return }
+        mutate { project in
+            let selected = project.slides.filter { ids.contains($0.id) }
+            var remaining = project.slides.filter { !ids.contains($0.id) }
+            if toFront {
+                remaining.insert(contentsOf: selected, at: 0)
+            } else {
+                remaining.append(contentsOf: selected)
+            }
+            project.slides = remaining
+        }
+    }
+
     /// Перемещает слайд (drag&drop reorder).
     public func moveSlide(from source: Int, to destination: Int) {
         mutate { project in
@@ -539,6 +656,20 @@ public final class ProjectsStore: ObservableObject {
         mutate { project in
             guard let index = project.slides.firstIndex(where: { $0.id == id }) else { return }
             block(&project.slides[index])
+        }
+    }
+
+    /// Обновляет слайд БЕЗ записи в историю Undo (для фоновых кэшей:
+    /// лица, длительности видео).
+    private func updateSlideCached(id: UUID, _ block: (inout MediaReference) -> Void) {
+        guard var project = currentProject,
+              let index = project.slides.firstIndex(where: { $0.id == id }) else { return }
+        block(&project.slides[index])
+        project.updatedAt = Date()
+        currentProject = project
+        isDirty = true
+        if settings.autosaveEnabled {
+            try? saveCurrentProject()
         }
     }
 }

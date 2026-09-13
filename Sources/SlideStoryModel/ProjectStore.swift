@@ -84,15 +84,17 @@ public struct ProjectStore: Sendable {
                 needsSave = true
             }
         }
-        if case .userFile(let audio) = project.music.source {
-            if let refreshed = try? BookmarkResolver.refreshedBookmark(base64: audio.bookmarkData),
-               refreshed != audio.bookmarkData {
-                project.music.source = .userFile(MediaAudioReference(
-                    id: audio.id,
-                    bookmarkData: refreshed,
-                    displayName: audio.displayName,
-                    cachedDuration: audio.cachedDuration
-                ))
+        if var tracks = project.music.source?.trackReferences, !tracks.isEmpty {
+            var changed = false
+            for index in tracks.indices {
+                if let refreshed = try? BookmarkResolver.refreshedBookmark(base64: tracks[index].bookmarkData),
+                   refreshed != tracks[index].bookmarkData {
+                    tracks[index].bookmarkData = refreshed
+                    changed = true
+                }
+            }
+            if changed {
+                project.music.source = .userFiles(tracks)
                 needsSave = true
             }
         }

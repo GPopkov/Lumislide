@@ -4,16 +4,13 @@ import SwiftUI
 @main
 struct LumislideApp: App {
     @NSApplicationDelegateAdaptor(LumislideAppDelegate.self) private var appDelegate
-    @StateObject private var settings = AppSettings()
-    @StateObject private var store: ProjectsStore
 
-    init() {
-        let settings = AppSettings()
-        _settings = StateObject(wrappedValue: settings)
-        _store = StateObject(wrappedValue: ProjectsStore(settings: settings))
-        // Кастомное локализуемое главное меню (устанавливается после запуска).
-        AppMenuController.shared.configure(store: _store.wrappedValue, settings: settings)
-    }
+    // ВАЖНО: используем синглтоны, а не @StateObject, создаваемый в init().
+    // `_store.wrappedValue` в init() создаёт ВРЕМЕННЫЙ экземпляр (SwiftUI затем
+    // инсталлирует StateObject заново) — переданный в AppMenuController store
+    // деаллоцировался, и все пункты меню, зависящие от store, не работали.
+    private let settings = AppSettings.shared
+    private let store = ProjectsStore.shared
 
     var body: some Scene {
         WindowGroup {
@@ -25,13 +22,8 @@ struct LumislideApp: App {
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified)
 
-        // Настройки приложения.
-        Settings {
-            SettingsView()
-                .environmentObject(settings)
-        }
-
-        // Вторичные окна открываются программно (см. AppWindowsController).
+        // Вторичные окна (в т.ч. Настройки) открываются программно и
+        // управляются AppWindowsController — см. AppWindowsController.openSettings.
     }
 }
 
@@ -39,6 +31,9 @@ struct LumislideApp: App {
 @MainActor
 final class LumislideAppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Меню подключаем здесь (ровно один раз после запуска) с общими
+        // синглтонами — так AppMenuController.store всегда валиден.
+        AppMenuController.shared.configure(store: ProjectsStore.shared, settings: AppSettings.shared)
         AppMenuController.shared.install()
     }
 }
@@ -51,7 +46,7 @@ final class LumislideAppDelegate: NSObject, NSApplicationDelegate {
 @MainActor
 public enum AppWindowsController {
     private enum Kind: Hashable {
-        case preview, export, properties, help
+        case preview, export, properties, help, settings
     }
 
     /// Открытые окна (сильная ссылка; очищается при закрытии окна).
@@ -135,6 +130,31 @@ public enum AppWindowsController {
             window.center()
             window.isReleasedWhenClosed = false
             window.contentViewController = NSHostingController(rootView: HelpWindowView())
+            return window
+        }
+    }
+
+    /// Открывает окно настроек приложения.
+    ///
+    /// ВАЖНО: НЕ используем SwiftUI-сцену `Settings` и `showSettingsWindow:`
+    /// через responder chain — из-за кастомного @NSApplicationDelegateAdaptor
+    /// это действие не доходит до обработчика SwiftUI. Открываем своё окно
+    /// (как остальные вторичные окна приложения).
+    public static func openSettings(settings: AppSettings) {
+        show(.settings, projectID: nil) {
+            let window = EscCloseWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 540, height: 340),
+                styleMask: [.titled, .closable],
+                backing: .buffered,
+                defer: false
+            )
+            window.title = L10n.text(.settings)
+            window.isReleasedWhenClosed = false
+            window.contentViewController = NSHostingController(
+                rootView: SettingsView().environmentObject(settings)
+            )
+            window.setFrameAutosaveName("SettingsWindow")
+            window.center()
             return window
         }
     }

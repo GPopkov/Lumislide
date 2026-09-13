@@ -99,6 +99,38 @@ final class AppTests: XCTestCase {
     // MARK: - Переименование проекта (проблема 4)
 
     @MainActor
+    func testUndoRedoRestoresProject() throws {
+        let defaults = UserDefaults(suiteName: "test.lumislide.undo")!
+        defaults.removePersistentDomain(forName: "test.lumislide.undo")
+        let settings = AppSettings(defaults: defaults)
+        let fm = FileManager.default
+        let dir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: dir) }
+        settings.projectsDirectory = dir
+
+        let store = ProjectsStore(settings: settings)
+        store.createNewProject()
+        XCTAssertEqual(store.currentProject?.slides.count, 2)
+
+        store.mutate { project in
+            project.slides.append(MediaReference(kind: .photo, bookmarkData: "x", displayName: "extra"))
+        }
+        XCTAssertEqual(store.currentProject?.slides.count, 3)
+        XCTAssertTrue(store.canUndo)
+        XCTAssertFalse(store.canRedo)
+
+        store.undo()
+        XCTAssertEqual(store.currentProject?.slides.count, 2)
+        XCTAssertTrue(store.canRedo)
+
+        store.redo()
+        XCTAssertEqual(store.currentProject?.slides.count, 3)
+
+        defaults.removePersistentDomain(forName: "test.lumislide.undo")
+    }
+
+    @MainActor
     func testProjectRenameMovesFileAndReloadsList() throws {
         let defaults = UserDefaults(suiteName: "test.lumislide.rename")!
         defaults.removePersistentDomain(forName: "test.lumislide.rename")
