@@ -12,7 +12,10 @@ enum TestMediaFactory {
     ///   - duration: длительность в секундах.
     ///   - fps: частота кадров.
     ///   - w, h: размер кадра.
-    static func makeBaseVideo(url: URL, duration: Double = 5, fps: Int32 = 10, w: Int = 160, h: Int = 120) throws {
+    ///   - startOffset: смещение первого кадра дорожки от нуля (сек).
+    ///     Ненулевое значение имитирует файлы (edit list / склейки), у которых
+    ///     нет кадра ровно в 0 — запрос кадра в 0 с нулевым допуском падает.
+    static func makeBaseVideo(url: URL, duration: Double = 5, fps: Int32 = 10, w: Int = 160, h: Int = 120, startOffset: Double = 0) throws {
         try? FileManager.default.removeItem(at: url)
         let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
         let settings: [String: Any] = [
@@ -28,7 +31,7 @@ enum TestMediaFactory {
         ])
         writer.add(input)
         writer.startWriting()
-        writer.startSession(atSourceTime: .zero)
+        writer.startSession(atSourceTime: CMTime(seconds: startOffset, preferredTimescale: 600))
 
         var pixelBuffer: CVPixelBuffer?
         CVPixelBufferPoolCreatePixelBuffer(nil, adaptor.pixelBufferPool!, &pixelBuffer)
@@ -47,7 +50,8 @@ enum TestMediaFactory {
         let total = Int(duration * Double(fps))
         for i in 0..<total {
             while !input.isReadyForMoreMediaData { usleep(500) }
-            adaptor.append(pixelBuffer!, withPresentationTime: CMTime(value: CMTimeValue(i), timescale: fps))
+            let presentationTime = CMTime(seconds: startOffset + Double(i) / Double(fps), preferredTimescale: 600)
+            adaptor.append(pixelBuffer!, withPresentationTime: presentationTime)
         }
         input.markAsFinished()
         let sem = DispatchSemaphore(value: 0)

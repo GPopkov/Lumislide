@@ -30,12 +30,27 @@ public enum VideoFrameSourceError: Error, LocalizedError, Sendable {
 /// `AVAssetReader`.
 public final class VideoFrameSource: @unchecked Sendable {
     private let asset: AVAsset
+    /// Точный генератор (нулевой допуск).
     private let generator: AVAssetImageGenerator
+    /// Генератор «в точке или сразу после» — для файлов, где нет кадра
+    /// ровно в запрошенный момент (смещённый первый кадр, edit list).
+    private let tolerantGenerator: AVAssetImageGenerator
+    /// Генератор «любой ближайший кадр» (допуск бесконечный).
+    private let anyGenerator: AVAssetImageGenerator
     private let assetDuration: Double
+    /// Начало диапазона видеодорожки (может быть не 0).
+    private let trackStart: Double
+    /// Конец диапазона видеодорожки (сек).
+    private let trackEnd: Double
     private let videoSize: CGSize
     /// Удерживает security-scoped доступ к файлу на всё время жизни
     /// источника (иначе доступ закроется сразу после резолвинга).
     private let accessHolder: SecurityScopedAccess?
+    private let fileName: String
+    /// Последний успешно извлечённый кадр (запасной вариант, чтобы один
+    /// «плохой» кадр не прерывал рендер).
+    private var lastGoodFrame: CIImage?
+    private let lock = NSLock()
 
     /// Инициализирует источник кадров для файла.
     /// - Parameters:
@@ -46,32 +61,42 @@ public final class VideoFrameSource: @unchecked Sendable {
         let asset = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
         self.asset = asset
         self.accessHolder = accessHolder
+        self.fileName = url.lastPathComponent
 
         guard let track = asset.tracks(withMediaType: .video).first else {
             throw VideoFrameSourceError.noVideoTrack
         }
 
-        let generator = AVAssetImageGenerator(asset: asset)
-        generator.appliesPreferredTrackTransform = true
-        generator.requestedTimeToleranceBefore = .zero
-        generator.requestedTimeToleranceAfter = .zero
-        self.generator = generator
+        func makeGenerator(_ before: CMTime, _ after: CMTime) -> AVAssetImageGenerator {
+            let g = AVAssetImageGenerator(asset: asset)
+            g.appliesPreferredTrackTransform = true
+            g.requestedTimeToleranceBefore = before
+            g.requestedTimeToleranceAfter = after
+            return g
+        }
+        self.generator = makeGenerator(.zero, .zero)
+        self.tolerantGenerator = makeGenerator(.zero, CMTime(seconds: 0.5, preferredTimescale: 600))
+        self.anyGenerator = makeGenerator(.positiveInfinity, .positiveInfinity)
 
         // ВАЖНО: контейнерная длительность может быть больше реального
         // диапазона видеодорожки — у многих файлов (запись экрана, mux с более
         // длинным аудио) `asset.duration` задаётся самой длинной дорожкой,
-        // а кадров в «хвосте» нет. Для извлечения кадров берём минимум из
-        // длительности контейнера и времени окончания видеодорожки, иначе
-        // запрос кадра в «хвосте» падает с ошибкой (см. «frame at 29,9s»).
+        // а кадров в «хвосте» нет. Дополнительно учитываем СМЕЩЕНИЕ начала
+        // дорожки (`timeRange.start`): у части файлов (edit list, склейки)
+        // первый кадр не в нуле, и запрос кадра в 0 падал
+        // («Cannot open video asset: frame at 0.0s»).
         let containerDuration = asset.duration.seconds.isFinite ? asset.duration.seconds : 0
-        let trackDuration = track.timeRange.duration.seconds
-        let usableDuration: Double
-        if trackDuration.isFinite, trackDuration > 0 {
-            usableDuration = min(containerDuration, trackDuration)
-        } else {
-            usableDuration = containerDuration
-        }
-        self.assetDuration = max(usableDuration, 0)
+        let rangeStart = track.timeRange.start.seconds
+        let rangeDuration = track.timeRange.duration.seconds
+        let rangeStartSafe = rangeStart.isFinite ? max(rangeStart, 0) : 0
+        let rangeEnd = (rangeStart.isFinite && rangeDuration.isFinite)
+            ? rangeStart + rangeDuration
+            : containerDuration
+        let trackEndRaw = max(rangeEnd, rangeStartSafe)
+        let usableEnd = containerDuration > 0 ? min(containerDuration, trackEndRaw) : trackEndRaw
+        self.trackStart = rangeStartSafe
+        self.trackEnd = max(usableEnd, rangeStartSafe)
+        self.assetDuration = max(self.trackEnd - self.trackStart, 0)
 
         let naturalRect = CGRect(origin: .zero, size: track.naturalSize)
         let transformedRect = naturalRect.applying(track.preferredTransform).standardized
@@ -90,39 +115,70 @@ public final class VideoFrameSource: @unchecked Sendable {
     public var size: CGSize { videoSize }
 
     /// Извлекает кадр в момент времени.
-    /// - Parameter time: время в секундах (0...duration).
+    /// - Parameter time: локальное время слайда в секундах (0...duration).
     /// - Returns: кадр (CIImage).
     public func frame(atTime time: Double) throws -> CIImage {
         guard assetDuration > 0 else { throw VideoFrameSourceError.invalidFrameTime }
-        // Последний кадр может быть раньше заявленной длительности контейнера;
-        // отступаем от реального конца дорожки на малую величину.
         let epsilon = 1.0 / 600.0
         let upperBound = max(assetDuration - epsilon, 0)
-        let clamped = min(max(time, 0), upperBound)
-        let cmTime = CMTime(seconds: clamped, preferredTimescale: 600)
+        let local = min(max(time, 0), upperBound)
+        let absolute = trackStart + local
 
-        do {
-            let cgImage = try generator.copyCGImage(at: cmTime, actualTime: nil)
-            return CIImage(cgImage: cgImage)
-        } catch {
-            // Запасной вариант: если точный кадр в этой точке недоступен
-            // (декодер не находит кадр у самого конца файла), отступаем
-            // назад небольшими шагами, пока кадр не найдётся.
-            var fallback = clamped
-            for _ in 0..<10 {
-                fallback = max(fallback - 0.1, 0)
-                let fallbackTime = CMTime(seconds: fallback, preferredTimescale: 600)
-                if let cgImage = try? generator.copyCGImage(at: fallbackTime, actualTime: nil) {
-                    return CIImage(cgImage: cgImage)
-                }
-            }
-            throw VideoFrameSourceError.cannotOpenAsset("frame at \(clamped)s")
+        // 1. Точный кадр (нулевой допуск) — идеальный вариант для плавности.
+        if let image = copyImage(generator, atSeconds: absolute) { return cache(image) }
+        // 2. Кадр «в точке или сразу после» — когда кадра ровно в точке нет
+        //    (смещённый первый кадр, edit list).
+        if let image = copyImage(tolerantGenerator, atSeconds: absolute) { return cache(image) }
+        // 3. Любой ближайший кадр (ключевой).
+        if let image = copyImage(anyGenerator, atSeconds: absolute) { return cache(image) }
+
+        // 4. Скан в обе стороны от запрошенной точки (ограниченное число шагов).
+        var offset = 0.1
+        var attempts = 0
+        while attempts < 200 {
+            attempts += 1
+            let back = absolute - offset
+            if back >= trackStart, let image = copyImage(anyGenerator, atSeconds: back) { return cache(image) }
+            let forward = absolute + offset
+            if forward <= trackEnd, let image = copyImage(anyGenerator, atSeconds: forward) { return cache(image) }
+            offset += 0.1
+            if offset > assetDuration + 0.1 { break }
         }
+
+        // 5. Последний удачный кадр — лучше показать его, чем прервать рендер.
+        lock.lock()
+        let cached = lastGoodFrame
+        lock.unlock()
+        if let cached { return cached }
+
+        throw VideoFrameSourceError.cannotOpenAsset(
+            "frame at \(local)s of \(fileName) (asset \(fmt(assetDuration))s, track \(fmt(trackStart))...\(fmt(trackEnd))s)"
+        )
     }
 
     /// Кэширует первый кадр (для миниатюры в сетке редактора).
     public func thumbnail() throws -> CGImage {
-        try generator.copyCGImage(at: .zero, actualTime: nil)
+        let t = CMTime(seconds: trackStart, preferredTimescale: 600)
+        if let cg = try? generator.copyCGImage(at: t, actualTime: nil) { return cg }
+        if let cg = try? tolerantGenerator.copyCGImage(at: t, actualTime: nil) { return cg }
+        return try anyGenerator.copyCGImage(at: t, actualTime: nil)
+    }
+
+    private func copyImage(_ generator: AVAssetImageGenerator, atSeconds seconds: Double) -> CIImage? {
+        let t = CMTime(seconds: seconds, preferredTimescale: 600)
+        guard let cg = try? generator.copyCGImage(at: t, actualTime: nil) else { return nil }
+        return CIImage(cgImage: cg)
+    }
+
+    private func cache(_ image: CIImage) -> CIImage {
+        lock.lock()
+        lastGoodFrame = image
+        lock.unlock()
+        return image
+    }
+
+    private func fmt(_ value: Double) -> String {
+        String(format: "%.2f", value)
     }
 }
 

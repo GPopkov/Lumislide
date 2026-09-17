@@ -258,7 +258,19 @@ public final class TimelineFrameRenderer: @unchecked Sendable {
         // Кадр видео в момент локального времени.
         let clampedLocal = min(max(localTime, 0), 1)
         let videoTime = clampedLocal * videoSource.duration
-        let frame = try videoSource.frame(atTime: videoTime)
+        let frame: CIImage
+        do {
+            frame = try videoSource.frame(atTime: videoTime)
+        } catch {
+            // Не валим весь экспорт из-за одного недоступного кадра:
+            // рендерим чёрный кадр и продолжаем. Диагностика — в stderr.
+            FileHandle.standardError.write(
+                Data("Lumislide: video frame unavailable \(error.localizedDescription)\n".utf8)
+            )
+            frame = CIImage(color: CIColor.black).cropped(
+                to: CGRect(origin: .zero, size: configuration.canvasSize)
+            )
+        }
 
         // Компонируем как «фото» без Ken Burns: blur фон + fit передний план.
         let composited = SlideImageCompositor.composite(
