@@ -98,10 +98,6 @@ struct ThumbnailGridView: NSViewRepresentable {
         }
 
         func updateSlides(_ slides: [MediaReference]) {
-            // Смена проекта/порядка — якорь диапазона больше не актуален.
-            if self.slides.first?.id != slides.first?.id || slides.isEmpty {
-                (collectionView as? ThumbnailCollectionView)?.resetSelectionAnchor()
-            }
             self.slides = slides
         }
 
@@ -147,6 +143,9 @@ struct ThumbnailGridView: NSViewRepresentable {
             }
             thumbItem.onRightClick = { [weak self] in
                 self?.makeMenu(for: slide, index: index)
+            }
+            thumbItem.onDoubleClick = { [weak self] in
+                self?.openSlideViewer(at: index)
             }
             return thumbItem
         }
@@ -238,16 +237,16 @@ struct ThumbnailGridView: NSViewRepresentable {
                 var result: NSImage?
                 if let cached = cache.image(forKey: cacheKey) {
                     // Устаревшие записи кэша могут быть полноразмерными.
-                    result = Self.downscaled(cached, maxPixel: 512) ?? cached
+                    result = Self.downscaled(cached, maxPixel: 800) ?? cached
                 } else {
                     switch kind {
                     case .photo:
                         // Декодируем СРАЗУ в размере карточки (без полного
                         // декода многомегапиксельного фото) — быстро и легко.
-                        result = Self.smallImage(at: resolved.url, maxPixel: 512)
+                        result = Self.smallImage(at: resolved.url, maxPixel: 800)
                     case .video:
                         if let full = Self.firstVideoFrame(url: resolved.url) {
-                            result = Self.downscaled(full, maxPixel: 512) ?? full
+                            result = Self.downscaled(full, maxPixel: 800) ?? full
                         }
                     }
                     if let result {
@@ -504,6 +503,11 @@ struct ThumbnailGridView: NSViewRepresentable {
             store.relinkSlide(id: id)
         }
 
+        /// Открывает увеличенный просмотр слайда (двойной щелчок).
+        func openSlideViewer(at index: Int) {
+            AppWindowsController.openSlideViewer(store: store, startIndex: index)
+        }
+
         @objc func deleteSelectedAction(_ sender: Any?) {
             store.removeSlides(ids: selectedIDs())
         }
@@ -541,66 +545,35 @@ struct ThumbnailGridView: NSViewRepresentable {
 final class ThumbnailCollectionView: NSCollectionView {
     var onDeleteKey: (() -> Void)?
 
-    /// «Якорь» диапазона — индекс последнего одиночного/Cmd-клика.
-    private var selectionAnchor: Int?
+    /// «Якорь» диапазона для Shift+клика — индекс последнего одиночного/Cmd-клика.
+    /// (Обработка кликов живёт в ячейке: `NSCollectionView.mouseDown` не
+    /// вызывается, события обрабатывает `NSCollectionViewItem`.)
+    var selectionAnchor: Int?
 
-    override func keyDown(with event: NSEvent) {
-        if event.keyCode == 51 || event.keyCode == 117 {
-            onDeleteKey?()
+    /// Локальный монитор клавиш: Delete/Backspace удаляет выделенные слайды
+    /// независимо от того, кто сейчас first responder.
+    private var keyMonitor: Any?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil {
+            if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+            keyMonitor = nil
             return
         }
-        super.keyDown(with: event)
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        // Клик по карточке также делает сетку first responder,
-        // чтобы сразу работала клавиша Delete.
-        window?.makeFirstResponder(self)
-
-        let point = convert(event.locationInWindow, from: nil)
-        guard let indexPath = indexPathForItem(at: point) else {
-            // Клик по пустому месту — обычное поведение (снять выделение).
-            selectionAnchor = nil
-            super.mouseDown(with: event)
-            return
-        }
-
-        let index = indexPath.item
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        let path = IndexPath(item: index, section: 0)
-
-        // Shift+клик — диапазон от якоря (Cmd+Shift — в дополнение к выделению).
-        if flags.contains(.shift), let anchor = selectionAnchor {
-            let lower = min(anchor, index)
-            let upper = max(anchor, index)
-            var paths = flags.contains(.command) ? selectionIndexPaths : Set<IndexPath>()
-            for i in lower...upper {
-                paths.insert(IndexPath(item: i, section: 0))
+        guard keyMonitor == nil else { return }
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, event.window === self.window else { return event }
+            // Не мешаем редактированию текста.
+            if let responder = self.window?.firstResponder,
+               responder is NSTextView || responder is NSTextField {
+                return event
             }
-            selectionIndexPaths = paths
-            return
-        }
-
-        // Cmd+клик — переключить отдельную карточку.
-        if flags.contains(.command) {
-            var paths = selectionIndexPaths
-            if paths.contains(path) {
-                paths.remove(path)
-            } else {
-                paths.insert(path)
+            if event.keyCode == 51 || event.keyCode == 117 {
+                self.onDeleteKey?()
+                return nil
             }
-            selectionIndexPaths = paths
-            selectionAnchor = index
-            return
+            return event
         }
-
-        // Обычный клик — одиночное выделение (и старт drag&drop reorder).
-        selectionAnchor = index
-        super.mouseDown(with: event)
-    }
-
-    /// Сбрасывает якорь диапазона (например, после открытия другого проекта).
-    func resetSelectionAnchor() {
-        selectionAnchor = nil
     }
 }

@@ -16,6 +16,8 @@ final class ThumbnailItem: NSCollectionViewItem {
     var onDelete: (() -> Void)?
     /// Действие контекстного меню (ПКМ).
     var onRightClick: (() -> Void)?
+    /// Двойной щелчок — открыть слайд в отдельном окне просмотра.
+    var onDoubleClick: (() -> Void)?
 
     // MARK: - UI
 
@@ -38,6 +40,7 @@ final class ThumbnailItem: NSCollectionViewItem {
 
     override func loadView() {
         let root = NSView(frame: NSRect(x: 0, y: 0, width: 180, height: 150))
+
 
         thumbnailView.translatesAutoresizingMaskIntoConstraints = false
         thumbnailView.imageScaling = .scaleProportionallyUpOrDown
@@ -242,9 +245,77 @@ final class ThumbnailItem: NSCollectionViewItem {
         deleteButton.isHidden = true
     }
 
+    override func mouseDown(with event: NSEvent) {
+        guard let collectionView else {
+            super.mouseDown(with: event)
+            return
+        }
+        // Клик по карточке делает сетку first responder, чтобы работали
+        // клавиши (Delete для batch-удаления и т.п.).
+        collectionView.window?.makeFirstResponder(collectionView)
+
+        // Двойной щелчок — увеличенный просмотр слайда.
+        if event.clickCount >= 2 {
+            super.mouseDown(with: event)
+            onDoubleClick?()
+            return
+        }
+
+        guard let indexPath = collectionView.indexPath(for: self) else {
+            super.mouseDown(with: event)
+            return
+        }
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let anchorStore = collectionView as? ThumbnailCollectionView
+
+        // Shift+клик — диапазон от якоря (Cmd+Shift — в дополнение к выделению).
+        if flags.contains(.shift) {
+            let anchor = anchorStore?.selectionAnchor ?? indexPath.item
+            let lower = min(anchor, indexPath.item)
+            let upper = max(anchor, indexPath.item)
+            let range = Set((lower...upper).map { IndexPath(item: $0, section: 0) })
+            let target = flags.contains(.command)
+                ? collectionView.selectionIndexPaths.union(range)
+                : range
+            applySelection(target, in: collectionView)
+            return
+        }
+
+        // Cmd+клик — переключить отдельную карточку.
+        if flags.contains(.command) {
+            var target = collectionView.selectionIndexPaths
+            if target.contains(indexPath) {
+                target.remove(indexPath)
+            } else {
+                target.insert(indexPath)
+            }
+            applySelection(target, in: collectionView)
+            anchorStore?.selectionAnchor = indexPath.item
+            return
+        }
+
+        // Обычный клик — штатное поведение (выделение и drag&drop reorder).
+        anchorStore?.selectionAnchor = indexPath.item
+        super.mouseDown(with: event)
+    }
+
+    /// Применяет выделение к сетке (точечно, без полного reload).
+    private func applySelection(_ paths: Set<IndexPath>, in collectionView: NSCollectionView) {
+        let current = collectionView.selectionIndexPaths
+        let toDeselect = current.subtracting(paths)
+        let toSelect = paths.subtracting(current)
+        if !toDeselect.isEmpty {
+            collectionView.deselectItems(at: toDeselect)
+        }
+        if !toSelect.isEmpty {
+            collectionView.selectItems(at: toSelect, scrollPosition: [])
+        }
+    }
+
     override func rightMouseDown(with event: NSEvent) {
         onRightClick?()
     }
+
 
     // MARK: - Actions
 

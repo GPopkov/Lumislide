@@ -20,7 +20,8 @@ public enum L10n {
         case automaticRandom, forceTransition, addTitle, disableKenBurns,
              relinkFile, hasTitle, transitionLabel, fileNotAvailable, video,
              thumbnailSize, fromPhotos, slideDuration, alwaysShowFullVideo,
-             durationSecondsPrompt, ok, moveToBeginning, moveToEnd
+             durationSecondsPrompt, ok, moveToBeginning, moveToEnd,
+             slideViewer, slideViewerHint
 
         // Свойства проекта
         case projectProperties, name, photoDuration, transitionDuration,
@@ -82,6 +83,8 @@ public enum L10n {
             .ok: "OK",
             .moveToBeginning: "Move to Beginning",
             .moveToEnd: "Move to End",
+            .slideViewer: "Slide Preview",
+            .slideViewerHint: "← → switch slides · Esc close",
             .thumbnailSize: "Thumbnail Size",
             .fromPhotos: "From Photos Library",
 
@@ -193,6 +196,8 @@ public enum L10n {
             .ok: "OK",
             .moveToBeginning: "Переместить в начало",
             .moveToEnd: "Переместить в конец",
+            .slideViewer: "Просмотр слайда",
+            .slideViewerHint: "← → переключение слайдов · Esc — закрыть",
             .thumbnailSize: "Размер миниатюр",
             .fromPhotos: "Из медиатеки Фото",
 

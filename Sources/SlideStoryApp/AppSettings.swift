@@ -32,6 +32,9 @@ public final class AppSettings: ObservableObject {
         static let thumbnailSize = "app.thumbnailSize"
     }
 
+    /// Допустимый диапазон размера (ширины) карточек миниатюр.
+    public static let thumbnailSizeRange: ClosedRange<Double> = 120...600
+
     private let defaults: UserDefaults
 
     public init(defaults: UserDefaults = .standard) {
@@ -47,7 +50,8 @@ public final class AppSettings: ObservableObject {
         _defaultPhotoDuration = Published(initialValue: defaults.object(forKey: Keys.defaultPhotoDuration) as? Double ?? 5.0)
         _autosaveEnabled = Published(initialValue: defaults.object(forKey: Keys.autosaveEnabled) as? Bool ?? true)
         _language = Published(initialValue: AppLanguage(rawValue: defaults.string(forKey: Keys.language) ?? "en") ?? .english)
-        _thumbnailSize = Published(initialValue: defaults.object(forKey: Keys.thumbnailSize) as? Double ?? 180.0)
+        let storedThumbnail = defaults.object(forKey: Keys.thumbnailSize) as? Double ?? 180.0
+        _thumbnailSize = Published(initialValue: Self.clampThumbnailSize(storedThumbnail))
     }
 
     // MARK: - Папка проектов
@@ -85,6 +89,11 @@ public final class AppSettings: ObservableObject {
     /// Размер (ширина) карточек миниатюр в сетке редактора.
     @Published public var thumbnailSize: Double {
         didSet { defaults.set(thumbnailSize, forKey: Keys.thumbnailSize) }
+    }
+
+    /// Приводит размер карточек к допустимому диапазону.
+    public static func clampThumbnailSize(_ value: Double) -> Double {
+        min(max(value, thumbnailSizeRange.lowerBound), thumbnailSizeRange.upperBound)
     }
 }
 

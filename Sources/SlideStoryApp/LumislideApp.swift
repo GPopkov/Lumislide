@@ -46,7 +46,7 @@ final class LumislideAppDelegate: NSObject, NSApplicationDelegate {
 @MainActor
 public enum AppWindowsController {
     private enum Kind: Hashable {
-        case preview, export, properties, help, settings
+        case preview, export, properties, help, settings, slideViewer
     }
 
     /// Открытые окна (сильная ссылка; очищается при закрытии окна).
@@ -54,6 +54,8 @@ public enum AppWindowsController {
     /// id проекта, для которого открыто окно (preview/export/properties).
     private static var projectIDs: [Kind: UUID] = [:]
     private static var closeObservers: [Kind: NSObjectProtocol] = [:]
+    /// Модель окна увеличенного просмотра слайда (единственный экземпляр).
+    private static var slideViewerModel: SlideViewerModel?
 
     /// Открывает окно предпросмотра проекта.
     public static func openPreview(project: SlideshowProject, store: ProjectsStore) {
@@ -159,6 +161,51 @@ public enum AppWindowsController {
         }
     }
 
+    /// Открывает окно увеличенного просмотра слайда (двойной щелчок по карточке).
+    /// Повторный вызов активирует открытое окно и переходит к выбранному слайду.
+    public static func openSlideViewer(store: ProjectsStore, startIndex: Int) {
+        if let model = slideViewerModel, let window = windows[.slideViewer] {
+            model.setIndex(startIndex)
+            if window.isMiniaturized { window.deminiaturize(nil) }
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
+        let model = SlideViewerModel(store: store, startIndex: startIndex)
+        slideViewerModel = model
+        show(.slideViewer, projectID: store.currentProject?.id) {
+            let window = SlideViewerWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 960, height: 680),
+                styleMask: [.titled, .closable, .resizable],
+                backing: .buffered,
+                defer: false
+            )
+            window.title = L10n.text(.slideViewer)
+            window.isReleasedWhenClosed = false
+            window.contentMinSize = NSSize(width: 480, height: 340)
+            let hosting = NSHostingController(rootView: SlideViewerWindowView(model: model))
+            // Без этого SwiftUI ужимает окно до минимального размера контента.
+            hosting.sizingOptions = []
+            window.contentViewController = hosting
+            window.setContentSize(NSSize(width: 960, height: 680))
+            window.setFrameAutosaveName("SlideViewerWindow")
+            window.center()
+            window.onKeyDown = { [weak model, weak window] keyCode in
+                guard let model else { return false }
+                switch keyCode {
+                case 123, 126: model.previous(); return true   // ← ↑
+                case 124, 125: model.next(); return true        // → ↓
+                case 115: model.showFirst(); return true        // Home
+                case 119: model.showLast(); return true         // End
+                case 53: window?.performClose(nil); return true // Esc
+                default: return false
+                }
+            }
+            return window
+        }
+    }
+
     // MARK: - Единый экземпляр окна
 
     /// Показывает окно нужного типа. Если окно уже открыто для того же
@@ -191,6 +238,9 @@ public enum AppWindowsController {
             Task { @MainActor in
                 windows[kind] = nil
                 projectIDs[kind] = nil
+                if kind == .slideViewer {
+                    slideViewerModel = nil
+                }
                 if let observer = closeObservers[kind] {
                     NotificationCenter.default.removeObserver(observer)
                     closeObservers[kind] = nil

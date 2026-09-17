@@ -131,6 +131,44 @@ final class AppTests: XCTestCase {
     }
 
     @MainActor
+    func testSlideViewerModelRendersAndNavigates() throws {
+        let defaults = UserDefaults(suiteName: "test.lumislide.viewer")!
+        defaults.removePersistentDomain(forName: "test.lumislide.viewer")
+        let settings = AppSettings(defaults: defaults)
+        let fm = FileManager.default
+        let dir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: dir) }
+        settings.projectsDirectory = dir
+
+        let store = ProjectsStore(settings: settings)
+        store.createNewProject()
+
+        let model = SlideViewerModel(store: store, startIndex: 0)
+        XCTAssertEqual(model.slideCount, 2)
+        XCTAssertEqual(model.positionText, "1 / 2")
+
+        model.next()
+        XCTAssertEqual(model.positionText, "2 / 2")
+        model.next()                 // клампится на последнем
+        XCTAssertEqual(model.positionText, "2 / 2")
+        model.previous()
+        XCTAssertEqual(model.positionText, "1 / 2")
+        model.previous()             // клампится на первом
+        XCTAssertEqual(model.positionText, "1 / 2")
+        model.showLast()
+        XCTAssertEqual(model.positionText, "2 / 2")
+        model.showFirst()
+        XCTAssertEqual(model.positionText, "1 / 2")
+
+        // Стартовый индекс вне диапазона не ломает модель.
+        let model2 = SlideViewerModel(store: store, startIndex: 99)
+        XCTAssertEqual(model2.positionText, "2 / 2")
+
+        defaults.removePersistentDomain(forName: "test.lumislide.viewer")
+    }
+
+    @MainActor
     func testProjectRenameMovesFileAndReloadsList() throws {
         let defaults = UserDefaults(suiteName: "test.lumislide.rename")!
         defaults.removePersistentDomain(forName: "test.lumislide.rename")

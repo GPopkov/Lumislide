@@ -122,9 +122,17 @@ JSON (Codable, `SlideshowProject`). Ключевые поля:
 
 ## 6. UI
 - Сетка слайдов — `NSCollectionView` (drag&drop reorder) внутри
-  `NSViewRepresentable`; мультивыделение (`ThumbnailCollectionView`): Cmd+клик —
-  отдельная карточка, Shift+клик — диапазон от якоря. Выделение сохраняется по
-  id слайдов при `reloadData()` (иначе сбрасывалось при подгрузке миниатюр).
+  `NSViewRepresentable`. Обработка кликов — в `ThumbnailItem` (`mouseDown`):
+  `NSCollectionView.mouseDown` в этой связке не вызывается, события обрабатывает
+  `NSCollectionViewItem`. Мультивыделение: Cmd+клик — отдельная карточка,
+  Shift+клик — диапазон от якоря. Выделение сохраняется по id слайдов при
+  `reloadData()`; Delete/Backspace удаляет выделенные (локальный монитор клавиш,
+  не зависит от first responder). Размер карточек — 120…600 px.
+- Двойной щелчок по карточке открывает окно **просмотра слайда**
+  (`SlideViewerWindowView` + `SlideViewerModel`): кадр рендерится
+  `TimelineFrameRenderer` в фоне; навигация ← → ↑ ↓ / Home / End, Esc закрывает.
+  Клавиши перехватываются в `SlideViewerWindow.sendEvent` (SwiftUI-хост не
+  выпускает стрелки по цепочке ответчиков).
 - Вспомогательные окна (Просмотр/Экспорт/Свойства/Настройки/Справка) —
   **по одному экземпляру** (`AppWindowsController`): повторное открытие
   активирует окно или пересоздаёт контент для другого проекта.

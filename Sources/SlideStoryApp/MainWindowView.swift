@@ -79,8 +79,8 @@ struct MainWindowView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "square.grid.2x2")
                         .foregroundStyle(.secondary)
-                    Slider(value: $settings.thumbnailSize, in: 120...260)
-                        .frame(width: 160)
+                    Slider(value: $settings.thumbnailSize, in: AppSettings.thumbnailSizeRange)
+                        .frame(width: 200)
                         .help(L10n.text(.thumbnailSize))
                 }
             }

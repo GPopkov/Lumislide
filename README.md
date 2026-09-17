@@ -37,6 +37,9 @@ A native macOS app that turns your photos and videos into an MP4 slideshow.
 - **Per-slide duration** (right-click a card) and **Undo/Redo** for project edits.
 - **Multi-select** cards: Cmd-click toggles one card, Shift-click selects a range,
   with batch delete (Delete key / context menu) and move-to-start/end.
+- **Quick slide preview**: double-click a card to open the slide in a large window —
+  ← → (or ↑ ↓ / Home / End) switch slides, Esc closes.
+- **Thumbnail size**: cards can be resized from 120 up to 600 px (toolbar slider).
 - **Aspect ratios**: 16:9, 4:3, 9:16, 1:1. Media is fitted (no cropping); empty
   space is filled with a blurred copy of the same image.
 - **Live preview** window — the same pipeline as export, at lower resolution.
@@ -136,6 +139,9 @@ to your media — the files themselves stay where they are.
 - **Множественное выделение** карточек: Cmd+клик — отдельная карточка,
   Shift+клик — диапазон; массовое удаление (клавиша Delete / ПКМ) и перемещение
   в начало/конец.
+- **Быстрый просмотр слайда**: двойной щелчок по карточке открывает слайд в
+  большом окне — ← → (или ↑ ↓ / Home / End) листают слайды, Esc закрывает.
+- **Размер карточек**: ползунок в тулбаре — от 120 до 600 px.
 - **Пропорции кадра**: 16:9, 4:3, 9:16, 1:1. Медиа вписывается без обрезки;
   пустые поля заполняются размытой копией того же изображения.
 - **Окно предпросмотра** — тот же конвейер, что и при экспорте, в пониженном
