@@ -81,6 +81,15 @@ public final class TimelineFrameRenderer: @unchecked Sendable {
     private var metalBlenders: [String: TransitionBlender] = [:]
     /// Контекст для «запекания» базы фото-слайда в растр (см. photoBase).
     private let rasterContext = CIContext(options: [.useSoftwareRenderer: false])
+    /// Защита кэшей: фоновое запекание пишет в те же словари, что и рендер.
+    private let cacheLock = NSRecursiveLock()
+    /// Очередь фоновой подготовки «баз» следующих слайдов.
+    private let bakeQueue = DispatchQueue(label: "com.lumislide.slide-bake", qos: .userInitiated)
+    /// Слайды, для которых запекание уже запланировано.
+    private var bakingSlides: Set<Int> = []
+    /// Последний слайд, для которого запускалась предзагрузка (чтобы не сканировать
+    /// таймлайн на каждом кадре).
+    private var lastPrefetchStart: Double = .nan
 
     /// Инициализация рендерера.
     /// - Parameter configuration: конфигурация (разрешение/масштаб).
@@ -90,6 +99,8 @@ public final class TimelineFrameRenderer: @unchecked Sendable {
 
     /// Фиксирует проект: сбрасывает кэши источников кадров.
     public func invalidateCache() {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
         frameSources.removeAll()
         sourceOrder.removeAll()
         photoBases.removeAll()
@@ -102,7 +113,60 @@ public final class TimelineFrameRenderer: @unchecked Sendable {
     /// Размеры внутренних кэшей (для тестов/диагностики): число источников,
     /// запечённых баз фото и титров. Должны быть ограничены конфигурацией.
     public var cacheCounts: (sources: Int, photoBases: Int, titleImages: Int) {
-        (frameSources.count, photoBases.count, titleImages.count)
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        return (frameSources.count, photoBases.count, titleImages.count)
+    }
+
+    // MARK: - Предзагрузка
+
+    /// Фоновое запекание «базы» слайда (декод фото + blur + растр).
+    /// Позволяет перекрыть ~100 мс подготовки 24 МП фото с рендером
+    /// предыдущих кадров.
+    public func prefetchBase(slideIndex: Int, slide: MediaReference) {
+        guard slide.kind == .photo else { return }
+        cacheLock.lock()
+        let already = photoBases[slideIndex] != nil || bakingSlides.contains(slideIndex)
+        if !already { bakingSlides.insert(slideIndex) }
+        let limit = max(configuration.maxCachedPhotoBases, 2)
+        cacheLock.unlock()
+        guard !already else { return }
+
+        let maxPixelSize = configuration.effectiveSourceMaxPixelSize
+        let canvasSize = configuration.canvasSize
+        let renderScale = configuration.renderScale
+        let raster = rasterContext
+        bakeQueue.async { [weak self] in
+            guard let self else { return }
+            var entry: PhotoBaseEntry?
+            if let resolved = try? MediaResolver.resolveWithAccess(slide),
+               let image = SlideContextFactory.loadUprightPhoto(at: resolved.url, maxPixelSize: maxPixelSize) {
+                let computed = SlideImageCompositor.makeBase(
+                    sourceImage: image,
+                    canvasSize: canvasSize,
+                    renderScale: renderScale
+                ).image
+                let base: CIImage
+                if let cg = raster.createCGImage(computed, from: computed.extent) {
+                    base = CIImage(cgImage: cg)
+                    raster.clearCaches()
+                } else {
+                    base = computed
+                }
+                entry = PhotoBaseEntry(image: base, sourceSize: image.extent.size)
+            }
+            self.cacheLock.lock()
+            self.bakingSlides.remove(slideIndex)
+            if let entry, self.photoBases[slideIndex] == nil {
+                self.photoBases[slideIndex] = entry
+                self.photoBaseOrder.append(slideIndex)
+                while self.photoBaseOrder.count > limit {
+                    let old = self.photoBaseOrder.removeFirst()
+                    self.photoBases.removeValue(forKey: old)
+                }
+            }
+            self.cacheLock.unlock()
+        }
     }
 
     /// Рендерит кадр для момента времени.
@@ -119,6 +183,10 @@ public final class TimelineFrameRenderer: @unchecked Sendable {
         guard let current = TimelineBuilder.slide(at: time, in: timeline) else {
             throw FrameRenderError.emptyTimeline
         }
+
+        // Предзагрузка «баз» следующих фото-слайдов в фоне: декод 24 МП фото
+        // (~100 мс) перекрывается с рендером текущих кадров.
+        prefetchUpcoming(after: current.item, timeline: timeline, project: project)
 
         // Композит текущего слайда в его «локальное» время.
         let currentImage = try renderSlide(
@@ -179,6 +247,25 @@ public final class TimelineFrameRenderer: @unchecked Sendable {
             progress: Float(progress)
         )
         return result.cropped(to: canvasRect())
+    }
+
+    /// Запускает фоновую подготовку следующих слайдов (не чаще, чем раз на слайд).
+    private func prefetchUpcoming(
+        after item: SlideTimelineItem,
+        timeline: [SlideTimelineItem],
+        project: SlideshowProject
+    ) {
+        cacheLock.lock()
+        let isNewSlide = item.startTime != lastPrefetchStart
+        if isNewSlide { lastPrefetchStart = item.startTime }
+        cacheLock.unlock()
+        guard isNewSlide else { return }
+
+        for offset in 1...2 {
+            let nextIndex = item.slideIndex + offset
+            guard nextIndex < timeline.count, nextIndex < project.slides.count else { break }
+            prefetchBase(slideIndex: nextIndex, slide: project.slides[nextIndex])
+        }
     }
 
     /// Масштабированный прямоугольник холста.
@@ -242,18 +329,23 @@ public final class TimelineFrameRenderer: @unchecked Sendable {
 
     /// Источник кадров слайда: из кэша или создаём (с ограничением декодирования).
     private func frameSource(for slide: MediaReference, slideIndex: Int) throws -> SlideContextFactory.FrameSource {
+        cacheLock.lock()
         if let cached = frameSources[slideIndex] {
             touchSource(slideIndex)
+            cacheLock.unlock()
             return cached
         }
+        cacheLock.unlock()
         var scratch: [UUID: SlideContextFactory.FrameSource] = [:]
         let source = try SlideContextFactory.makeFrameSource(
             reference: slide,
             cachedFrames: &scratch,
             maxPixelSize: configuration.effectiveSourceMaxPixelSize
         )
+        cacheLock.lock()
         frameSources[slideIndex] = source
         touchSource(slideIndex)
+        cacheLock.unlock()
         return source
     }
 
@@ -283,6 +375,8 @@ public final class TimelineFrameRenderer: @unchecked Sendable {
     }
 
     private func photoBase(image: CIImage, slideIndex: Int) -> PhotoBaseEntry {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
         if let cached = photoBases[slideIndex] {
             touchBase(slideIndex)
             return cached
@@ -321,6 +415,8 @@ public final class TimelineFrameRenderer: @unchecked Sendable {
     /// кадре — заметная трата времени).
     private func titleImage(for slide: MediaReference, slideIndex: Int) -> CGImage? {
         guard let overlay = slide.titleOverlay else { return nil }
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
         if let cached = titleImages[slideIndex] { return cached }
         guard let image = SlideImageCompositor.makeTitleImage(
             overlay,
