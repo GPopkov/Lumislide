@@ -169,7 +169,7 @@ public final class SlideshowExporter: @unchecked Sendable {
                 project: project,
                 timeline: timeline,
                 musicURLs: music.map { $0.url }
-            )
+)
 
             if audioResult.audioMix != nil {
                 // Есть аудио (музыка и/или дорожки видео) — пересобираем через mux.

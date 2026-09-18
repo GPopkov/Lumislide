@@ -171,26 +171,34 @@ public enum SlideImageCompositor {
 
     /// Размытая растянутая копия изображения на весь холст.
     private static func blurredBackground(from image: CIImage, canvasRect: CGRect) -> CIImage {
-        // Растягиваем изображение на весь холст (искажение пропорций).
+        // Blur считаем на УМЕНЬШЕННОЙ копии холста и затем растягиваем обратно:
+        // радиус размытия большой, детали не важны, а стоимость Gaussian blur
+        // падает квадратично масштабу (для видео-слайдов это самый горячий путь —
+        // фон пересчитывается на каждом кадре).
+        let downscale: CGFloat = 0.25
+        let smallWidth = max(canvasRect.width * downscale, 1)
+        let smallHeight = max(canvasRect.height * downscale, 1)
+
+        // Растягиваем изображение на весь (уменьшенный) холст.
         let stretchTransform = CGAffineTransform(
-            a: canvasRect.width / max(image.extent.width, 1),
+            a: smallWidth / max(image.extent.width, 1),
             b: 0,
             c: 0,
-            d: canvasRect.height / max(image.extent.height, 1),
-            tx: canvasRect.minX,
-            ty: canvasRect.minY
+            d: smallHeight / max(image.extent.height, 1),
+            tx: 0,
+            ty: 0
         )
         let stretched = image.transformed(by: stretchTransform)
 
-        // Blur + лёгкое затемнение для контраста с передним планом.
         let blurFilter = CIFilter.gaussianBlur()
         blurFilter.inputImage = stretched
-        blurFilter.radius = Float(max(canvasRect.width, canvasRect.height) / 60)
+        blurFilter.radius = Float(max(smallWidth, smallHeight) / 60)
 
-        guard let blurred = blurFilter.outputImage else { return stretched }
+        let blurred = blurFilter.outputImage ?? stretched
 
-        // Жёсткая обрезка, чтобы blur не вылезал за края.
-        return blurred.cropped(to: canvasRect)
+        // Возвращаем на размер холста и обрезаем по краям.
+        let upscale = CGAffineTransform(scaleX: 1 / downscale, y: 1 / downscale)
+        return blurred.transformed(by: upscale).cropped(to: canvasRect)
     }
 
     /// Трансформация из прямоугольника назначения обратно в исходные

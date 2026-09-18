@@ -52,6 +52,19 @@ public final class VideoFrameSource: @unchecked Sendable {
     private var lastGoodFrame: CIImage?
     private let lock = NSLock()
 
+    // MARK: - Последовательное чтение (AVAssetReader)
+    //
+    // `AVAssetImageGenerator` на каждый кадр делает seek + декод с точностью
+    // до кадра (нулевой допуск) — это главный расход времени при экспорте
+    // видео-слайдов (~8 мс/кадр). При монотонных запросах (экспорт,
+    // воспроизведение) читаем кадры последовательно через `AVAssetReader`.
+    private var reader: AVAssetReader?
+    private var readerOutput: AVAssetReaderTrackOutput?
+    private var readerLastTime: Double = -.greatestFiniteMagnitude
+    private let preferredTransform: CGAffineTransform
+    /// Размер кадров на выходе последовательного чтения (nil — без масштабирования).
+    private let readerOutputSize: CGSize?
+
     /// Инициализирует источник кадров для файла.
     /// - Parameters:
     ///   - url: URL видеофайла.
@@ -100,6 +113,25 @@ public final class VideoFrameSource: @unchecked Sendable {
             : containerDuration
         let trackEndRaw = max(rangeEnd, rangeStartSafe)
         let usableEnd = containerDuration > 0 ? min(containerDuration, trackEndRaw) : trackEndRaw
+        self.preferredTransform = track.preferredTransform
+        // Выходной размер последовательного чтения: сохраняем пропорции
+        // НЕориентированного кадра (AVAssetReader не применяет поворот).
+        if maximumSize.width > 0, maximumSize.height > 0 {
+            let cap = max(maximumSize.width, maximumSize.height)
+            let natural = track.naturalSize
+            let side = max(natural.width, natural.height)
+            if side > cap, side > 0 {
+                let ratio = cap / side
+                self.readerOutputSize = CGSize(
+                    width: max((natural.width * ratio).rounded(.down), 2),
+                    height: max((natural.height * ratio).rounded(.down), 2)
+                )
+            } else {
+                self.readerOutputSize = nil
+            }
+        } else {
+            self.readerOutputSize = nil
+        }
         self.trackStart = rangeStartSafe
         self.trackEnd = max(usableEnd, rangeStartSafe)
         self.assetDuration = max(self.trackEnd - self.trackStart, 0)
@@ -130,7 +162,13 @@ public final class VideoFrameSource: @unchecked Sendable {
         let local = min(max(time, 0), upperBound)
         let absolute = trackStart + local
 
-        // 1. Точный кадр (нулевой допуск) — идеальный вариант для плавности.
+        // 1. Последовательное чтение (экспорт/воспроизведение): без seek на
+        //    каждый кадр — в разы быстрее точного поиска.
+        if let image = sequentialFrame(atAbsolute: absolute) {
+            return cache(image)
+        }
+
+        // 2. Точный кадр (нулевой допуск) — произвольный доступ (перемотка).
         if let image = copyImage(generator, atSeconds: absolute) { return cache(image) }
         // 2. Кадр «в точке или сразу после» — когда кадра ровно в точке нет
         //    (смещённый первый кадр, edit list).
@@ -168,6 +206,99 @@ public final class VideoFrameSource: @unchecked Sendable {
         if let cg = try? generator.copyCGImage(at: t, actualTime: nil) { return cg }
         if let cg = try? tolerantGenerator.copyCGImage(at: t, actualTime: nil) { return cg }
         return try anyGenerator.copyCGImage(at: t, actualTime: nil)
+    }
+
+    // MARK: - Последовательное чтение
+
+    /// Кадр через `AVAssetReader` — применяется при монотонных запросах
+    /// (экспорт, воспроизведение). Возвращает nil, если путь неприменим.
+    private func sequentialFrame(atAbsolute absolute: Double) -> CIImage? {
+        lock.lock()
+        defer { lock.unlock() }
+
+        // Продолжаем потоковое чтение, если запрос идёт вперёд и недалеко;
+        // иначе ридер стартует заново С ЗАПРОШЕННОГО времени (AVAssetReader
+        // сам встаёт на ближайший ключевой кадр) — быстрый «seek».
+        let canContinue = reader != nil
+            && absolute >= readerLastTime - 0.05
+            && absolute <= readerLastTime + 1.0
+        if !canContinue {
+            stopReaderLocked()
+            guard startReaderLocked(at: absolute) else { return nil }
+        }
+        guard let output = readerOutput else { return nil }
+
+        var lastImage: CIImage?
+        while let sample = output.copyNextSampleBuffer() {
+            let pts = CMSampleBufferGetPresentationTimeStamp(sample).seconds
+            readerLastTime = pts
+            if let buffer = CMSampleBufferGetImageBuffer(sample) {
+                lastImage = orientedImage(from: buffer)
+            }
+            if pts >= absolute - (1.0 / 120.0) {
+                return lastImage
+            }
+        }
+        // Конец дорожки — отдаём последний доступный кадр.
+        if let lastImage {
+            stopReaderLocked()
+            return lastImage
+        }
+        stopReaderLocked()
+        return nil
+    }
+
+    /// Создаёт ридер, начиная с указанного абсолютного времени.
+    private func startReaderLocked(at absolute: Double) -> Bool {
+        guard reader == nil else { return true }
+        guard let track = asset.tracks(withMediaType: .video).first,
+              let newReader = try? AVAssetReader(asset: asset) else { return false }
+
+        var attributes: [String: Any] = [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+        ]
+        if let size = readerOutputSize {
+            attributes[kCVPixelBufferWidthKey as String] = Int(size.width)
+            attributes[kCVPixelBufferHeightKey as String] = Int(size.height)
+        }
+        let output = AVAssetReaderTrackOutput(track: track, outputSettings: attributes)
+        // Буферы не копируем — берём из внутреннего пула ридера.
+        output.alwaysCopiesSampleData = false
+        guard newReader.canAdd(output) else { return false }
+        newReader.add(output)
+        let from = min(max(absolute, trackStart), max(trackEnd - 1.0 / 600.0, trackStart))
+        newReader.timeRange = CMTimeRange(
+            start: CMTime(seconds: from, preferredTimescale: 600),
+            duration: CMTime(seconds: max(trackEnd - from, 1.0 / 600.0), preferredTimescale: 600)
+        )
+        guard newReader.startReading() else { return false }
+        reader = newReader
+        readerOutput = output
+        readerLastTime = -.greatestFiniteMagnitude
+        return true
+    }
+
+    private func stopReaderLocked() {
+        reader?.cancelReading()
+        reader = nil
+        readerOutput = nil
+        readerLastTime = -.greatestFiniteMagnitude
+    }
+
+    /// Применяет поворот дорожки (AVAssetReader его не применяет) и
+    /// нормализует начало координат.
+    private func orientedImage(from buffer: CVPixelBuffer) -> CIImage {
+        var image = CIImage(cvPixelBuffer: buffer)
+        if !preferredTransform.isIdentity {
+            image = image.transformed(by: preferredTransform)
+            let extent = image.extent
+            if extent.origin != .zero {
+                image = image.transformed(
+                    by: CGAffineTransform(translationX: -extent.origin.x, y: -extent.origin.y)
+                )
+            }
+        }
+        return image
     }
 
     private func copyImage(_ generator: AVAssetImageGenerator, atSeconds seconds: Double) -> CIImage? {

@@ -35,6 +35,32 @@ final class VideoFrameSourceTests: XCTestCase {
         XCTAssertGreaterThan(lastFrame.extent.width, 0)
     }
 
+    /// Последовательное чтение кадров (AVAssetReader) и возврат назад
+    /// (произвольный доступ) должны работать без ошибок.
+    func testSequentialAndBackwardFrameRequests() throws {
+        let dir = FileManager.default.temporaryDirectory
+        let url = dir.appendingPathComponent("lumi-seq-\(UUID().uuidString).mp4")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try TestMediaFactory.makeBaseVideo(url: url, duration: 2, fps: 30, w: 320, h: 240)
+        let source = try VideoFrameSource(url: url)
+
+        // Монотонные запросы — потоковое чтение.
+        for step in 0...20 {
+            let t = source.duration * Double(step) / 20.0
+            let frame = try source.frame(atTime: t)
+            XCTAssertGreaterThan(frame.extent.width, 0)
+        }
+
+        // Назад — ридер пересоздаётся / произвольный доступ.
+        let back = try source.frame(atTime: 0.2)
+        XCTAssertGreaterThan(back.extent.width, 0)
+
+        // Конец клипа.
+        let end = try source.frame(atTime: source.duration)
+        XCTAssertGreaterThan(end.extent.width, 0)
+    }
+
     /// Видео с ведущим пустым участком (дорожка стартует не в нуле, как после
     /// склейки/edit list). Кадр в 0 раньше не находился и рендер падал.
     func testVideoWithLeadingEmptyEditReturnsFirstFrame() throws {
