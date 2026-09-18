@@ -42,29 +42,57 @@ public enum SlideImageCompositor {
         renderScale: Double = 1.0,
         progress: Double = 0
     ) -> CompositedSlide {
-        // ВАЖНО: canvasSize — это НЕ масштабированный размер; рендерер
-        // передаёт исходный размер холста, а renderScale применяется здесь.
-        // (Ранее renderer умножал size сам — возникало двойное масштабирование
-        // в предпросмотре: холст уменьшался в 4 раза.)
-        let canvas = CGSize(
-            width: canvasSize.width * renderScale,
-            height: canvasSize.height * renderScale
+        // Одноразовый путь (предпросмотр/тесты): считаем базу и титр здесь же.
+        let base = makeBase(sourceImage: sourceImage, canvasSize: canvasSize, renderScale: renderScale)
+        let titleImage = titleOverlay.flatMap {
+            makeTitleImage($0, canvasSize: canvasSize, renderScale: renderScale)
+        }
+        let image = composite(
+            base: base.image,
+            canvasSize: canvasSize,
+            trajectory: trajectory,
+            titleImage: titleImage,
+            renderScale: renderScale,
+            progress: progress
         )
-        let canvasRect = CGRect(origin: .zero, size: canvas)
+        return CompositedSlide(image: image, foregroundRect: base.foregroundRect)
+    }
 
-        // 1. Fit — вписываем изображение в холст.
+    /// Дорогая часть кадра фото-слайда: размытый фон + вписанный передний план
+    /// БЕЗ Ken Burns и титра.
+    ///
+    /// Для статичного фото результат не зависит от времени кадра, поэтому
+    /// считается ОДИН раз на слайд и кэшируется вызывающим (экспорт не тратит
+    /// Gaussian blur и fit на каждом кадре).
+    /// - Returns: база (в координатах холста) и прямоугольник переднего плана.
+    public static func makeBase(
+        sourceImage: CIImage,
+        canvasSize: CGSize,
+        renderScale: Double = 1.0
+    ) -> CompositedSlide {
+        let canvasRect = canvasRect(canvasSize: canvasSize, renderScale: renderScale)
         let fitRect = aspectFitRect(for: sourceImage.extent.size, in: canvasRect)
-
-        // 2. Фон: размытая растянутая копия.
         let background = blurredBackground(from: sourceImage, canvasRect: canvasRect)
-
-        // 3. Передний план (fit), поверх фона.
         let foreground = sourceImage.transformed(by: transform(from: fitRect, to: sourceImage.extent))
-
-        // В CIImage наложение: foreground поверх background.
         let layered = foreground.composited(over: background)
+        return CompositedSlide(image: layered.cropped(to: canvasRect), foregroundRect: fitRect)
+    }
 
-        // 4. Ken Burns — единая трансформация всего кадра.
+    /// Применяет Ken Burns и (заранее нарисованный) титр к базе слайда.
+    /// - Parameters:
+    ///   - base: результат `makeBase` (координаты холста).
+    ///   - titleImage: заранее отрисованный титр (`makeTitleImage`), nil — нет.
+    public static func composite(
+        base: CIImage,
+        canvasSize: CGSize,
+        trajectory: KenBurnsTrajectory?,
+        titleImage: CGImage?,
+        renderScale: Double = 1.0,
+        progress: Double = 0
+    ) -> CIImage {
+        let canvasRect = canvasRect(canvasSize: canvasSize, renderScale: renderScale)
+
+        // Ken Burns — единая трансформация всего кадра.
         let final: CIImage
         if let trajectory {
             let t = trajectoryRectForTime(trajectory, canvasRect: canvasRect, progress: progress)
@@ -75,18 +103,52 @@ public enum SlideImageCompositor {
                 y: -t.minY * scaleY
             )
             .scaledBy(x: scaleX, y: scaleY)
-            let transformed = layered.transformed(by: transform)
-            final = cropToCanvas(transformed, canvasRect: canvasRect)
+            final = base.transformed(by: transform).cropped(to: canvasRect)
         } else {
-            final = layered
+            final = base.cropped(to: canvasRect)
         }
 
-        // 5. Титр.
-        let titled: CIImage = titleOverlay.map { overlay in
-            addTitle(overlay, to: final, canvas: canvasRect)
-        } ?? final
+        guard let titleImage else { return final }
+        return CIImage(cgImage: titleImage).composited(over: final).cropped(to: canvasRect)
+    }
 
-        return CompositedSlide(image: titled, foregroundRect: fitRect)
+    /// Рисует титр в прозрачное изображение размера холста.
+    /// Результат не зависит от кадра — его можно кэшировать на слайд.
+    public static func makeTitleImage(
+        _ overlay: TitleOverlay,
+        canvasSize: CGSize,
+        renderScale: Double = 1.0
+    ) -> CGImage? {
+        let canvasRect = canvasRect(canvasSize: canvasSize, renderScale: renderScale)
+        let size = canvasRect.size
+        guard size.width > 0, size.height > 0 else { return nil }
+
+        let renderer = ImageRenderer(size: size)
+        let fontSize = overlay.fontSize * (size.height / 1080.0)
+        let titleRect = textRect(
+            text: overlay.text,
+            fontSize: fontSize,
+            position: overlay.position,
+            canvas: canvasRect
+        )
+        renderer.drawText(
+            text: overlay.text,
+            in: titleRect,
+            fontSize: fontSize,
+            color: overlay.cgColor
+        )
+        return renderer.image
+    }
+
+    /// Размер холста с учётом масштаба рендера.
+    public static func canvasRect(canvasSize: CGSize, renderScale: Double = 1.0) -> CGRect {
+        CGRect(
+            origin: .zero,
+            size: CGSize(
+                width: canvasSize.width * renderScale,
+                height: canvasSize.height * renderScale
+            )
+        )
     }
 
     /// Прямоугольник вписывания (aspect fit).
@@ -163,30 +225,6 @@ public enum SlideImageCompositor {
 
     private static func cropToCanvas(_ image: CIImage, canvasRect: CGRect) -> CIImage {
         image.cropped(to: canvasRect)
-    }
-
-    /// Рисует титр через Core Graphics и накладывает на кадр.
-    private static func addTitle(_ overlay: TitleOverlay, to image: CIImage, canvas: CGRect) -> CIImage {
-        let size = canvas.size
-        guard size.width > 0, size.height > 0 else { return image }
-
-        let renderer = ImageRenderer(size: size)
-        let titleRect = textRect(
-            text: overlay.text,
-            fontSize: overlay.fontSize * (size.height / 1080.0),
-            position: overlay.position,
-            canvas: canvas
-        )
-
-        renderer.drawText(
-            text: overlay.text,
-            in: titleRect,
-            fontSize: overlay.fontSize * (size.height / 1080.0),
-            color: overlay.cgColor
-        )
-
-        guard let textImage = renderer.image else { return image }
-        return CIImage(cgImage: textImage).composited(over: image)
     }
 
     private static func textRect(text: String, fontSize: CGFloat, position: TitlePosition, canvas: CGRect) -> CGRect {

@@ -57,7 +57,7 @@ public final class VideoFrameSource: @unchecked Sendable {
     ///   - url: URL видеофайла.
     ///   - accessHolder: держатель security-scoped доступа (удерживается).
     /// - Throws: `VideoFrameSourceError`.
-    public init(url: URL, accessHolder: SecurityScopedAccess? = nil) throws {
+    public init(url: URL, accessHolder: SecurityScopedAccess? = nil, maximumSize: CGSize = .zero) throws {
         let asset = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
         self.asset = asset
         self.accessHolder = accessHolder
@@ -72,6 +72,12 @@ public final class VideoFrameSource: @unchecked Sendable {
             g.appliesPreferredTrackTransform = true
             g.requestedTimeToleranceBefore = before
             g.requestedTimeToleranceAfter = after
+            // Ограничение размера кадра: для экспорта достаточно размера холста,
+            // а декодирование 4K/8K кадров «как есть» — главный источник памяти
+            // и лишней работы.
+            if maximumSize.width > 0, maximumSize.height > 0 {
+                g.maximumSize = maximumSize
+            }
             return g
         }
         self.generator = makeGenerator(.zero, .zero)
@@ -195,7 +201,8 @@ public enum SlideContextFactory {
     /// Резолвит слайд в источник кадров (с кэшированием по id слайда).
     public static func makeFrameSource(
         reference: MediaReference,
-        cachedFrames: inout [UUID: FrameSource]
+        cachedFrames: inout [UUID: FrameSource],
+        maxPixelSize: CGFloat? = nil
     ) throws -> FrameSource {
         if let cached = cachedFrames[reference.id] {
             return cached
@@ -211,7 +218,7 @@ public enum SlideContextFactory {
             // ВАЖНО: загружаем фото с применённой EXIF-ориентацией (upright),
             // чтобы координаты лиц (детекция в том же пространстве) совпадали
             // с пикселями при рендере.
-            guard let image = Self.loadUprightPhoto(at: url) else {
+            guard let image = Self.loadUprightPhoto(at: url, maxPixelSize: maxPixelSize) else {
                 throw BookmarkError.fileUnavailable(reference.displayName)
             }
             let source = FrameSource.photo(image)
@@ -221,9 +228,11 @@ public enum SlideContextFactory {
             // Держатель удерживается внутри VideoFrameSource: кадры
             // читаются лениво (AVAssetImageGenerator), файл может
             // понадобиться в любой момент жизни источника.
+            let maximumSize = maxPixelSize.map { CGSize(width: $0, height: $0) } ?? .zero
             let videoSource = try VideoFrameSource(
                 url: url,
-                accessHolder: resolved.accessHolder
+                accessHolder: resolved.accessHolder,
+                maximumSize: maximumSize
             )
             let source = FrameSource.video(videoSource)
             cachedFrames[reference.id] = source
@@ -238,7 +247,7 @@ public enum SlideContextFactory {
 
     /// Загружает фото в upright-пространстве: EXIF-ориентация применена,
     /// extent соответствует «как показывает пользователь». Полный размер.
-    static func loadUprightPhoto(at url: URL) -> CIImage? {
+    static func loadUprightPhoto(at url: URL, maxPixelSize: CGFloat? = nil) -> CIImage? {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
             return CIImage(contentsOf: url)
         }
@@ -248,10 +257,15 @@ public enum SlideContextFactory {
               width > 0, height > 0 else {
             return CIImage(contentsOf: url)
         }
+        // Ограничиваем декодирование размером под разрешение рендера
+        // (с запасом на Ken Burns): полноразмерные фото (12+ МП) —
+        // основной вклад в потребление памяти.
+        let naturalMax = max(width, height)
+        let decodedMax = maxPixelSize.map { min(naturalMax, max($0, 256)) } ?? naturalMax
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: max(width, height),
+            kCGImageSourceThumbnailMaxPixelSize: decodedMax,
             kCGImageSourceShouldCacheImmediately: true,
         ]
         guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {

@@ -344,6 +344,60 @@ final class RendererLogicTests: XCTestCase {
         XCTAssertEqual(timeline[2].duration, 2, accuracy: 0.001)
     }
 
+    /// Регрессия по памяти: кэши рендерера (источники, «базы» фото, титры)
+    /// должны быть ограничены, иначе память экспорта растёт с числом слайдов.
+    func testRendererCachesStayBounded() throws {
+        let dir = FileManager.default.temporaryDirectory
+        var files: [URL] = []
+        defer { for f in files { try? FileManager.default.removeItem(at: f) } }
+
+        var project = SlideshowProject(name: "Caches")
+        project.defaultPhotoDuration = 0.5
+        project.transitionDuration = 0.2
+        project.isKenBurnsEnabled = false
+        var slides: [MediaReference] = []
+        for i in 0..<14 {
+            let url = dir.appendingPathComponent("lumi-cache-\(i)-\(UUID().uuidString).png")
+            files.append(url)
+            let ctx = CGContext(
+                data: nil, width: 640, height: 480, bitsPerComponent: 8, bytesPerRow: 0,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            )!
+            ctx.setFillColor(CGColor(srgbRed: CGFloat(i % 5) / 5, green: 0.5, blue: 0.7, alpha: 1))
+            ctx.fill(CGRect(x: 0, y: 0, width: 640, height: 480))
+            guard let image = ctx.makeImage(),
+                  let dest = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil)
+            else { throw XCTSkip("cannot create test image") }
+            CGImageDestinationAddImage(dest, image, nil)
+            _ = CGImageDestinationFinalize(dest)
+            slides.append(MediaReference(kind: .photo, bookmarkData: try BookmarkResolver.createBookmark(for: url), displayName: url.lastPathComponent))
+        }
+        project.slides = slides
+
+        let renderer = TimelineFrameRenderer(
+            configuration: RenderFrameConfiguration(
+                canvasSize: CGSize(width: 640, height: 360),
+                renderScale: 0.5,
+                sourceMaxPixelSize: 1200,
+                maxCachedSources: 4,
+                maxCachedPhotoBases: 3
+            )
+        )
+        let timeline = TimelineBuilder.buildTimeline(project: project, videoDurations: [:])
+        let total = TimelineBuilder.totalDuration(of: timeline)
+
+        var time = 0.0
+        while time <= total {
+            _ = try renderer.makeFrame(at: time, timeline: timeline, project: project)
+            time += 0.1
+        }
+
+        let counts = renderer.cacheCounts
+        XCTAssertLessThanOrEqual(counts.sources, 4, "Кэш источников не ограничен")
+        XCTAssertLessThanOrEqual(counts.photoBases, 3, "Кэш «баз» фото не ограничен")
+    }
+
     // MARK: - AudioTrackMixer.photoIntervals (интеграция с таймлайном)
 
     func testProjectPhotoIntervalsIntegratesWithTimeline() {

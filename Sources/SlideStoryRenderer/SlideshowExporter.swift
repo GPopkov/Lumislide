@@ -103,7 +103,12 @@ public final class SlideshowExporter: @unchecked Sendable {
         self.renderer = TimelineFrameRenderer(
             configuration: RenderFrameConfiguration(canvasSize: request.resolution, renderScale: 1.0)
         )
-        self.ciContext = CIContext(options: [.useSoftwareRenderer: false])
+        // Для покадрового рендера промежуточные результаты не переиспользуются
+        // между кадрами, зато их кэш разрастается на сотни МБ — отключаем.
+        self.ciContext = CIContext(options: [
+            .useSoftwareRenderer: false,
+            .cacheIntermediates: false,
+        ])
     }
 
     /// Отменяет экспорт (следующий кадр не будет записан).
@@ -229,6 +234,7 @@ public final class SlideshowExporter: @unchecked Sendable {
         var frameIndex = 0
         var loopError: Error?
         let startTime = Date()
+        var framesSinceCacheClear = 0
 
         // Проходим по кадрам.
         while frameIndex < totalFrames {
@@ -246,24 +252,57 @@ public final class SlideshowExporter: @unchecked Sendable {
                     let time = Double(frameIndex) / request.frameRate.fps
                     let frame = try renderFrame(at: time, timeline: timeline)
 
-                    // Из CIImage → CVPixelBuffer (из пула адаптера).
+                    // Из CIImage → CVPixelBuffer (из пула адаптера; если пул ещё
+                    // не готов — создаём буфер вручную с IOSurface).
                     var pixelBuffer: CVPixelBuffer?
                     if let pool = adaptor.pixelBufferPool {
                         CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pixelBuffer)
+                    }
+                    if pixelBuffer == nil {
+                        let width = Int(request.resolution.width)
+                        let height = Int(request.resolution.height)
+                        let attributes: [String: Any] = [
+                            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+                            kCVPixelBufferWidthKey as String: width,
+                            kCVPixelBufferHeightKey as String: height,
+                            kCVPixelBufferIOSurfacePropertiesKey as String: [:],
+                        ]
+                        CVPixelBufferCreate(
+                            nil, width, height, kCVPixelFormatType_32BGRA,
+                            attributes as CFDictionary, &pixelBuffer
+                        )
                     }
                     guard let buffer = pixelBuffer else {
                         throw SlideshowExportError.writingFailed("cannot create pixel buffer")
                     }
                     ciContext.render(frame, to: buffer)
 
-                    let presentationTime = CMTime(value: CMTimeValue(frameIndex), timescale: CMTimeScale(request.frameRate.rawValue))
-                    guard videoInput.isReadyForMoreMediaData else {
-                        // Backpressure: ждём (кадр будет отрендерен заново).
-                        usleep(1000)
-                        return
+                    // Backpressure: ждём готовности писателя, НЕ теряя уже
+                    // отрендеренный кадр (раньше кадр рендерился и
+                    // выбрасывался — двойная работа на каждой итерации).
+                    while !videoInput.isReadyForMoreMediaData {
+                        if isCancelled {
+                            writer.cancelWriting()
+                            throw SlideshowExportError.cancelled
+                        }
+                        usleep(2000)
                     }
+
+                    let presentationTime = CMTime(
+                        value: CMTimeValue(frameIndex),
+                        timescale: CMTimeScale(request.frameRate.rawValue)
+                    )
                     adaptor.append(buffer, withPresentationTime: presentationTime)
                     frameIndex += 1
+
+                    // Периодически чистим внутренние кэши CIContext — иначе они
+                    // накапливают текстуры на длинных проектах (память растёт).
+                    framesSinceCacheClear += 1
+                    if framesSinceCacheClear >= 15 {
+                        framesSinceCacheClear = 0
+                        ciContext.clearCaches()
+                    }
+
                     let elapsed = Date().timeIntervalSince(startTime)
                     let fraction = Double(frameIndex) / Double(max(totalFrames, 1))
                     let eta = fraction > 0 ? elapsed / fraction * (1 - fraction) : 0
