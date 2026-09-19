@@ -234,6 +234,7 @@ public final class SlideshowExporter: @unchecked Sendable {
         var frameIndex = 0
         var loopError: Error?
         let startTime = Date()
+        let canvasRect = CGRect(origin: .zero, size: request.resolution)
         var framesSinceCacheClear = 0
 
         // Проходим по кадрам.
@@ -275,7 +276,15 @@ public final class SlideshowExporter: @unchecked Sendable {
                     guard let buffer = pixelBuffer else {
                         throw SlideshowExportError.writingFailed("cannot create pixel buffer")
                     }
-                    ciContext.render(frame, to: buffer)
+                    // Явные bounds/цветовое пространство: если extent кадра
+                    // отличается от холста (переходы), рендер без bounds мог
+                    // дать смещённый/частичный кадр.
+                    ciContext.render(
+                        frame,
+                        to: buffer,
+                        bounds: canvasRect,
+                        colorSpace: CGColorSpaceCreateDeviceRGB()
+                    )
 
                     // Backpressure: ждём готовности писателя, НЕ теряя уже
                     // отрендеренный кадр (раньше кадр рендерился и
@@ -466,13 +475,10 @@ public final class SlideshowExporter: @unchecked Sendable {
     /// длительностей видео-слайдов). Используется для оценки размера файла.
     /// - Parameter project: проект.
     public static func projectDuration(_ project: SlideshowProject) -> Double {
-        var videoDurations: [Int: Double] = [:]
-        for (index, slide) in project.slides.enumerated() where slide.kind == .video {
-            if let resolved = try? BookmarkResolver.resolve(slide.bookmarkData),
-               let source = try? VideoFrameSource(url: resolved.url, accessHolder: resolved.accessHolder) {
-                videoDurations[index] = source.duration
-            }
-        }
+        // Длительности видео — через общий резолвер (учитывает и файлы,
+        // и ассеты медиатеки Фото): иначе оценка расходилась с фактическим
+        // экспортом.
+        let videoDurations = MediaDurationResolver.resolveVideoDurations(project: project)
         let timeline = TimelineBuilder.buildTimeline(project: project, videoDurations: videoDurations)
         return TimelineBuilder.totalDuration(of: timeline)
     }
@@ -498,8 +504,10 @@ public final class SlideshowExporter: @unchecked Sendable {
         guard duration > 0 else { return 0 }
         let megapixels = resolution.width * resolution.height / 1_000_000
         let bitrate = quality.bitrateMultiplier * (megapixels * 2_000_000)
-        let codecFactor: Double = codec == .h265 ? 0.6 : 1.0
-        return bitrate * duration / 8 * codecFactor
+        // Кодировщику задаётся ОДИН и тот же average bitrate для H.264 и H.265,
+        // поэтому оценка не должна различаться по кодекам (раньше H.265
+        // ошибочно умножался на 0.6, что давало расхождение с фактом).
+        return bitrate * duration / 8
     }
 }
 

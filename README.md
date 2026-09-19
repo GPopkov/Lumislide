@@ -38,7 +38,11 @@ A native macOS app that turns your photos and videos into an MP4 slideshow.
 - **Multi-select** cards: Cmd-click toggles one card, Shift-click selects a range,
   with batch delete (Delete key / context menu) and move-to-start/end.
 - **Quick slide preview**: double-click a card to open the slide in a large window —
-  ← → (or ↑ ↓ / Home / End) switch slides, Esc closes.
+  ← → (or ↑ ↓ / Home / End) switch slides, Delete removes the slide, Esc closes.
+- **Remembers your work**: the last opened project is opened automatically on
+  launch; the current project is highlighted in the project list.
+- Card thumbnails show the slide title; forced transitions are marked on their own
+  card.
 - **Thumbnail size**: cards can be resized from 120 up to 600 px (toolbar slider).
 - **Aspect ratios**: 16:9, 4:3, 9:16, 1:1. Media is fitted (no cropping); empty
   space is filled with a blurred copy of the same image.
@@ -140,7 +144,12 @@ to your media — the files themselves stay where they are.
   Shift+клик — диапазон; массовое удаление (клавиша Delete / ПКМ) и перемещение
   в начало/конец.
 - **Быстрый просмотр слайда**: двойной щелчок по карточке открывает слайд в
-  большом окне — ← → (или ↑ ↓ / Home / End) листают слайды, Esc закрывает.
+  большом окне — ← → (или ↑ ↓ / Home / End) листают слайды, Delete удаляет
+  слайд, Esc закрывает.
+- **Помнит работу**: последний открытый проект открывается автоматически при
+  запуске; текущий проект подсвечивается в списке проектов.
+- На карточках показывается титр слайда, а принудительный переход помечается на
+  своей карточке.
 - **Размер карточек**: ползунок в тулбаре — от 120 до 600 px.
 - **Пропорции кадра**: 16:9, 4:3, 9:16, 1:1. Медиа вписывается без обрезки;
   пустые поля заполняются размытой копией того же изображения.

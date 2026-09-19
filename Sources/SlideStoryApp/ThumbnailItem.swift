@@ -25,7 +25,8 @@ final class ThumbnailItem: NSCollectionViewItem {
     private let badgeView = NSImageView()
     private let numberLabel = NSTextField(labelWithString: "")
     private let durationLabel = NSTextField(labelWithString: "")
-    private let titleIndicator = NSImageView()
+    /// Текст титра слайда (показывается на карточке, если титр задан).
+    private let titleLabel = NSTextField(labelWithString: "")
     private let deleteButton = NSButton()
     /// Индикатор принудительного перехода: значок + название перехода.
     private let transitionIndicator = NSStackView()
@@ -63,10 +64,13 @@ final class ThumbnailItem: NSCollectionViewItem {
         durationLabel.textColor = .secondaryLabelColor
         root.addSubview(durationLabel)
 
-        titleIndicator.translatesAutoresizingMaskIntoConstraints = false
-        titleIndicator.image = NSImage(systemSymbolName: "textformat", accessibilityDescription: nil)
-        titleIndicator.toolTip = L10n.text(.hasTitle)
-        root.addSubview(titleIndicator)
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        titleLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        titleLabel.textColor = .secondaryLabelColor
+        titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.usesSingleLineMode = true
+        titleLabel.isHidden = true
+        root.addSubview(titleLabel)
 
         deleteButton.translatesAutoresizingMaskIntoConstraints = false
         deleteButton.isBordered = false
@@ -129,19 +133,22 @@ final class ThumbnailItem: NSCollectionViewItem {
             durationLabel.bottomAnchor.constraint(equalTo: thumbnailView.bottomAnchor, constant: -4),
             durationLabel.trailingAnchor.constraint(equalTo: thumbnailView.trailingAnchor, constant: -6),
 
-            titleIndicator.topAnchor.constraint(equalTo: numberLabel.bottomAnchor, constant: 2),
-            titleIndicator.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 4),
-            titleIndicator.widthAnchor.constraint(equalToConstant: 14),
-            titleIndicator.heightAnchor.constraint(equalToConstant: 14),
+            // Титр слайда — строкой под миниатюрой (под номером слайда).
+            titleLabel.topAnchor.constraint(equalTo: numberLabel.bottomAnchor, constant: 1),
+            titleLabel.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 4),
+            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: root.trailingAnchor, constant: -4),
 
             deleteButton.topAnchor.constraint(equalTo: root.topAnchor, constant: 4),
             deleteButton.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -4),
             deleteButton.widthAnchor.constraint(equalToConstant: 18),
             deleteButton.heightAnchor.constraint(equalToConstant: 18),
 
+            // Метка перехода — на одной строке с номером слайда (раньше была
+            // прижата к самому низу карточки и визуально «уезжала» к
+            // следующему ряду).
+            transitionIndicator.centerYAnchor.constraint(equalTo: numberLabel.centerYAnchor),
             transitionIndicator.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -4),
-            transitionIndicator.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -4),
-            transitionIndicator.heightAnchor.constraint(greaterThanOrEqualToConstant: 18),
+            transitionIndicator.heightAnchor.constraint(equalToConstant: 16),
             transitionIndicator.leadingAnchor.constraint(greaterThanOrEqualTo: numberLabel.trailingAnchor, constant: 8),
 
             transitionIcon.widthAnchor.constraint(equalToConstant: 12),
@@ -182,7 +189,9 @@ final class ThumbnailItem: NSCollectionViewItem {
             }
         }
 
-        titleIndicator.isHidden = slide.titleOverlay == nil
+        let titleText = slide.titleOverlay?.text.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        titleLabel.stringValue = titleText
+        titleLabel.isHidden = titleText.isEmpty
 
         // Индикатор принудительного перехода: значок + название перехода
         // (вместо цветной рамки, которая не читалась как «переход»).

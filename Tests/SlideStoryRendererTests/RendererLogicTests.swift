@@ -1,6 +1,7 @@
 import XCTest
 import Foundation
 import CoreImage
+import ImageIO
 import AVFoundation
 @testable import SlideStoryRenderer
 @testable import SlideStoryModel
@@ -396,6 +397,94 @@ final class RendererLogicTests: XCTestCase {
         let counts = renderer.cacheCounts
         XCTAssertLessThanOrEqual(counts.sources, 4, "Кэш источников не ограничен")
         XCTAssertLessThanOrEqual(counts.photoBases, 3, "Кэш «баз» фото не ограничен")
+    }
+
+    /// Регрессия: «скольжение влево/вправо» должно идти по всему времени
+    /// перехода и одинаково работать на любом размере холста. Раньше
+    /// (CISwipeTransition, width = 0) в экспорте эффект заканчивался за ~20%
+    /// времени перехода и картинка «прыгала».
+    func testSlideTransitionProgressIsGradualAtAnyCanvasSize() throws {
+        let dir = FileManager.default.temporaryDirectory
+        var files: [URL] = []
+        defer { for f in files { try? FileManager.default.removeItem(at: f) } }
+
+        func makeSolidPhoto(red: CGFloat, blue: CGFloat, name: String) throws -> MediaReference {
+            let url = dir.appendingPathComponent("lumi-slide-\(name)-\(UUID().uuidString).png")
+            files.append(url)
+            let ctx = CGContext(
+                data: nil, width: 320, height: 180, bitsPerComponent: 8, bytesPerRow: 0,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            )!
+            ctx.setFillColor(CGColor(red: red, green: 0, blue: blue, alpha: 1))
+            ctx.fill(CGRect(x: 0, y: 0, width: 320, height: 180))
+            let image = ctx.makeImage()!
+            guard let dest = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil) else {
+                throw XCTSkip("cannot create test image")
+            }
+            CGImageDestinationAddImage(dest, image, nil)
+            _ = CGImageDestinationFinalize(dest)
+            return MediaReference(
+                kind: .photo,
+                bookmarkData: try BookmarkResolver.createBookmark(for: url),
+                displayName: name
+            )
+        }
+
+        for canvasHeight in [270.0, 1080.0] {
+            var project = SlideshowProject(name: "Slide")
+            project.defaultPhotoDuration = 2
+            project.transitionDuration = 1
+            project.isKenBurnsEnabled = false
+            var first = try makeSolidPhoto(red: 1, blue: 0, name: "red")
+            first.transitionOverride = .slideLeft
+            project.slides = [first, try makeSolidPhoto(red: 0, blue: 1, name: "blue")]
+
+            let canvas = project.exportSettings.aspectRatio.canvasSize(height: CGFloat(canvasHeight))
+            let renderer = TimelineFrameRenderer(
+                configuration: RenderFrameConfiguration(canvasSize: canvas, renderScale: 1.0)
+            )
+            let timeline = TimelineBuilder.buildTimeline(project: project, videoDurations: [:])
+            XCTAssertEqual(timeline.count, 2)
+            let transitionDuration = timeline[0].transitionDuration
+            XCTAssertGreaterThan(transitionDuration, 0)
+            let transitionStart = timeline[0].endTime - transitionDuration
+
+            func redShare(at progress: Double) -> Double {
+                let time = transitionStart + progress * transitionDuration * 0.999
+                guard let frame = try? renderer.makeFrame(at: time, timeline: timeline, project: project),
+                      let cg = CIContext().createCGImage(frame, from: frame.extent) else { return -1 }
+                return Self.redShare(of: cg)
+            }
+
+            let start = redShare(at: 0.0)
+            let middle = redShare(at: 0.5)
+            let finish = redShare(at: 0.999)
+            XCTAssertGreaterThan(start, 0.9, "canvas \(canvasHeight): начало перехода не показывает первый слайд")
+            XCTAssertLessThan(finish, 0.1, "canvas \(canvasHeight): конец перехода не показывает второй слайд")
+            XCTAssertGreaterThan(middle, 0.15, "canvas \(canvasHeight): эффект пролетает (середина = финал)")
+            XCTAssertLessThan(middle, 0.85, "canvas \(canvasHeight): эффект не идёт (середина = начало)")
+        }
+    }
+
+    /// Доля «красных» пикселей (для проверки постепенности перехода).
+    private static func redShare(of image: CGImage) -> Double {
+        let width = 32
+        let height = 18
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        guard let ctx = CGContext(
+            data: &pixels, width: width, height: height, bitsPerComponent: 8,
+            bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return -1 }
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        var red = 0
+        var index = 0
+        while index < pixels.count {
+            if pixels[index] > 128, pixels[index + 2] < 128 { red += 1 }
+            index += 4
+        }
+        return Double(red) / Double(width * height)
     }
 
     // MARK: - AudioTrackMixer.photoIntervals (интеграция с таймлайном)

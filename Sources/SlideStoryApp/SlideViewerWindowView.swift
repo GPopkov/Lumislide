@@ -65,6 +65,16 @@ final class SlideViewerModel: ObservableObject {
 
     // MARK: - Навигация
 
+    /// Удаляет текущий слайд (Delete/Backspace в окне просмотра).
+    /// Модель подписана на `store.$currentProject`, поэтому таймлайн и индекс
+    /// пересоберутся автоматически.
+    func deleteCurrent() {
+        guard let project, timeline.indices.contains(index) else { return }
+        let item = timeline[index]
+        guard project.slides.indices.contains(item.slideIndex) else { return }
+        store.removeSlide(id: project.slides[item.slideIndex].id)
+    }
+
     func next() { setIndex(index + 1) }
     func previous() { setIndex(index - 1) }
     func showFirst() { setIndex(0) }

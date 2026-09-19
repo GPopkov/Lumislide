@@ -91,7 +91,7 @@ public enum AppWindowsController {
             window.center()
             window.isReleasedWhenClosed = false
             window.contentViewController = NSHostingController(
-                rootView: ExportWindowView(project: project, onClose: { [weak window] in
+                rootView: ExportWindowView(project: project, settings: AppSettings.shared, onClose: { [weak window] in
                     window?.close()
                 })
             )
@@ -198,6 +198,7 @@ public enum AppWindowsController {
                 case 124, 125: model.next(); return true        // → ↓
                 case 115: model.showFirst(); return true        // Home
                 case 119: model.showLast(); return true         // End
+                case 51, 117: model.deleteCurrent(); return true // Delete / Backspace
                 case 53: window?.performClose(nil); return true // Esc
                 default: return false
                 }

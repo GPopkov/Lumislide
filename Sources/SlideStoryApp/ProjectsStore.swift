@@ -59,6 +59,21 @@ public final class ProjectsStore: ObservableObject {
     public init(settings: AppSettings) {
         self.settings = settings
         reloadProjects()
+        openLastProjectOnLaunch()
+    }
+
+    /// Открывает проект при запуске: последний открытый, иначе самый свежий.
+    private func openLastProjectOnLaunch() {
+        if let path = settings.lastProjectPath {
+            let url = URL(fileURLWithPath: path)
+            if FileManager.default.fileExists(atPath: url.path) {
+                openProject(at: url)
+                return
+            }
+        }
+        if let mostRecent = projects.first {
+            openProject(at: mostRecent)
+        }
     }
 
     // MARK: - Список проектов
@@ -113,6 +128,7 @@ public final class ProjectsStore: ObservableObject {
         currentProject = project
         currentProjectURL = store.fileURL
         isDirty = false
+        settings.lastProjectPath = store.fileURL.path
         resetUndoHistory()
         reloadProjects()
     }
@@ -181,6 +197,7 @@ public final class ProjectsStore: ObservableObject {
         currentProjectURL = url
         isDirty = false
         lastSavedName = project.name
+        settings.lastProjectPath = url.path
         reloadProjects()
         // Старые проекты: кэши лиц в устаревшей системе координат — пересчёт.
         refreshStaleFaceRegions(in: project)
@@ -191,6 +208,9 @@ public final class ProjectsStore: ObservableObject {
     /// Удаляет проект с диска (и из списка, если открыт).
     public func deleteProject(at url: URL) {
         try? FileManager.default.removeItem(at: url)
+        if settings.lastProjectPath == url.path {
+            settings.lastProjectPath = nil
+        }
         if currentProjectURL == url {
             currentProject = nil
             currentProjectURL = nil
@@ -233,6 +253,7 @@ public final class ProjectsStore: ObservableObject {
         currentProjectURL = targetURL
         isDirty = false
         lastSavedName = project.name
+        settings.lastProjectPath = targetURL.path
         reloadProjects()
     }
 

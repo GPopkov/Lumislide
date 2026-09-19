@@ -11,6 +11,8 @@ import SlideStoryRenderer
 /// Итоговый файл сохраняется через NSSavePanel в `.mp4`.
 struct ExportWindowView: View {
     let project: SlideshowProject
+    /// Настройки приложения: коэффициент калибровки оценки размера.
+    @ObservedObject var settings: AppSettings
 
     /// Закрытие окна. Окно открывается через NSHostingController+NSWindow,
     /// где SwiftUI `@Environment(\.dismiss)` не работает.
@@ -39,6 +41,10 @@ struct ExportWindowView: View {
     @State private var timelineDuration: Double = 0
     /// Отформатированная оценка размера («≈ 128 МБ»), пусто — пока не посчитана.
     @State private var estimatedSizeText: String = ""
+    /// Оценка «по целевому битрейту» (до калибровки) — база для обучения.
+    @State private var estimatedBytesTarget: Double = 0
+    /// Файл последнего экспорта (для калибровки оценки по факту).
+    @State private var lastExportURL: URL?
 
     private struct Preset: Identifiable {
         let id: String
@@ -215,6 +221,8 @@ struct ExportWindowView: View {
         alert.informativeText = L10n.text(.resolutionPrompt)
         alert.addButton(withTitle: L10n.text(.ok))
         alert.addButton(withTitle: L10n.text(.cancel))
+        // Esc закрывает диалог (см. диалог длительности слайда).
+        alert.buttons.last?.keyEquivalent = "\u{1b}"
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
         field.placeholderString = "1080×1350"
         alert.accessoryView = field
@@ -254,13 +262,16 @@ struct ExportWindowView: View {
             estimatedSizeText = ""
             return
         }
-        let bytes = SlideshowExporter.estimatedFileSize(
+        let targetBytes = SlideshowExporter.estimatedFileSize(
             duration: timelineDuration,
             codec: codec,
             resolution: selectedSize,
             quality: quality
         )
-        estimatedSizeText = Self.formatBytes(bytes)
+        estimatedBytesTarget = targetBytes
+        // Калибровка: на статичном контенте кодировщик выдаёт меньше целевого
+        // битрейта, поэтому оценка умножается на выученный коэффициент.
+        estimatedSizeText = Self.formatBytes(targetBytes * settings.exportBitrateRatio(for: codec))
     }
 
     private static func formatBytes(_ bytes: Double) -> String {
@@ -289,6 +300,7 @@ struct ExportWindowView: View {
             outputURL: url
         )
 
+        lastExportURL = url
         let exporter = SlideshowExporter(project: project, request: request)
         self.exporter = exporter
         isExporting = true
@@ -315,6 +327,17 @@ struct ExportWindowView: View {
                     statusMessage = L10n.text(.exportFinished)
                     progress = 1
                     self.exporter = nil
+                    // Калибруем оценку по фактическому размеру файла.
+                    if let exportURL = lastExportURL,
+                       let attributes = try? FileManager.default.attributesOfItem(atPath: exportURL.path),
+                       let size = attributes[.size] as? Int {
+                        settings.recordExportSize(
+                            actualBytes: size,
+                            estimatedBytes: estimatedBytesTarget,
+                            codec: codec
+                        )
+                        updateEstimatedSize()
+                    }
                 }
             } catch {
                 await MainActor.run {

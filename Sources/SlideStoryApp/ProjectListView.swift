@@ -4,7 +4,6 @@ import SwiftUI
 struct ProjectListView: View {
     @EnvironmentObject private var store: ProjectsStore
     @EnvironmentObject private var settings: AppSettings
-    @State private var selectedURL: URL?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -31,13 +30,20 @@ struct ProjectListView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                List(selection: $selectedURL) {
+                // Выделение списка привязано к текущему проекту: AppKit рисует
+                // синюю подсветку всей строки (раньше `selectedURL` не
+                // обновлялся, и подсвечивалась только иконка).
+                List(selection: Binding(
+                    get: { store.currentProjectURL },
+                    set: { url in
+                        if let url, url != store.currentProjectURL {
+                            store.openProject(at: url)
+                        }
+                    }
+                )) {
                     ForEach(store.projects, id: \.self) { url in
                         ProjectRow(url: url, isSelected: store.currentProjectURL == url)
                             .tag(url)
-                            .onTapGesture {
-                                store.openProject(at: url)
-                            }
                             .contextMenu {
                                 Button(L10n.text(.open)) { store.openProject(at: url) }
                                 Button(L10n.text(.projectProperties)) {

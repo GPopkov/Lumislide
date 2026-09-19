@@ -481,6 +481,9 @@ struct ThumbnailGridView: NSViewRepresentable {
             alert.informativeText = L10n.text(.durationSecondsPrompt)
             alert.addButton(withTitle: L10n.text(.ok))
             alert.addButton(withTitle: L10n.text(.cancel))
+            // Esc закрывает диалог (кнопка «Отмена» получает Esc-эквивалент:
+            // иначе фокус в текстовом поле «съедал» Escape).
+            alert.buttons.last?.keyEquivalent = "\u{1b}"
             let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 220, height: 24))
             let current = store.currentProject?.slides.first(where: { $0.id == id })?.customDuration
             field.stringValue = current.map { String($0) } ?? ""

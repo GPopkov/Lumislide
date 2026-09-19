@@ -30,6 +30,9 @@ public final class AppSettings: ObservableObject {
         static let autosaveEnabled = "app.autosaveEnabled"
         static let language = "app.language"
         static let thumbnailSize = "app.thumbnailSize"
+        static let lastProjectPath = "app.lastProjectPath"
+        static let exportRatioH264 = "app.exportRatio.h264"
+        static let exportRatioH265 = "app.exportRatio.h265"
     }
 
     /// Допустимый диапазон размера (ширины) карточек миниатюр.
@@ -52,6 +55,7 @@ public final class AppSettings: ObservableObject {
         _language = Published(initialValue: AppLanguage(rawValue: defaults.string(forKey: Keys.language) ?? "en") ?? .english)
         let storedThumbnail = defaults.object(forKey: Keys.thumbnailSize) as? Double ?? 180.0
         _thumbnailSize = Published(initialValue: Self.clampThumbnailSize(storedThumbnail))
+        _lastProjectPath = Published(initialValue: defaults.string(forKey: Keys.lastProjectPath))
     }
 
     // MARK: - Папка проектов
@@ -77,6 +81,29 @@ public final class AppSettings: ObservableObject {
         didSet { defaults.set(autosaveEnabled, forKey: Keys.autosaveEnabled) }
     }
 
+    // MARK: - Оценка размера экспорта
+
+    /// Поправочный коэффициент к оценке размера (факт / оценка по целевому
+    /// битрейту). Учится на реальных экспортах: слайдшоу из статичных фото
+    /// сжимается лучше целевого битрейта, поэтому оценка «по битрейту»
+    /// завышена. 1.0 — оценка ещё не калибровалась.
+    public func exportBitrateRatio(for codec: VideoCodec) -> Double {
+        let key = codec == .h265 ? Keys.exportRatioH265 : Keys.exportRatioH264
+        guard let stored = defaults.object(forKey: key) as? Double, stored > 0.05 else { return 1.0 }
+        return min(max(stored, 0.05), 1.5)
+    }
+
+    /// Запоминает фактическое соотношение размера к оценке (экспоненциальное
+    /// сглаживание, чтобы оценка сходилась к реальности на этом контенте).
+    public func recordExportSize(actualBytes: Int, estimatedBytes: Double, codec: VideoCodec) {
+        guard actualBytes > 0, estimatedBytes > 0 else { return }
+        let ratio = min(max(Double(actualBytes) / estimatedBytes, 0.05), 1.5)
+        let key = codec == .h265 ? Keys.exportRatioH265 : Keys.exportRatioH264
+        let previous = defaults.object(forKey: key) as? Double
+        let smoothed = previous.map { $0 * 0.5 + ratio * 0.5 } ?? ratio
+        defaults.set(smoothed, forKey: key)
+    }
+
     // MARK: - Локализация
 
     /// Язык интерфейса.
@@ -89,6 +116,13 @@ public final class AppSettings: ObservableObject {
     /// Размер (ширина) карточек миниатюр в сетке редактора.
     @Published public var thumbnailSize: Double {
         didSet { defaults.set(thumbnailSize, forKey: Keys.thumbnailSize) }
+    }
+
+    // MARK: - Последний проект
+
+    /// Путь последнего открытого проекта — открывается автоматически при запуске.
+    @Published public var lastProjectPath: String? {
+        didSet { defaults.set(lastProjectPath, forKey: Keys.lastProjectPath) }
     }
 
     /// Приводит размер карточек к допустимому диапазону.

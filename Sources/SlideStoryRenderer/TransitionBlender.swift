@@ -235,17 +235,22 @@ public final class TransitionBlender: @unchecked Sendable {
     }
 
     private static func slide(from: CIImage, to: CIImage, t: Double, direction: SlideDirection) -> CIImage? {
-        // Наиболее близкий CI-фильтр для «скольжения» — CISwipeTransition
-        // с жёсткой маской (width = 0) и заданной ориентацией.
-        let swipe = CIFilter.swipeTransition()
-        swipe.inputImage = from
-        swipe.targetImage = to
-        swipe.time = Float(t)
-        swipe.width = 0
-        // Смещение: для скольжения влево маска движется слева направо,
-        // для вправо — зеркально. В v1 — линейное движение через extent.
-        swipe.angle = direction == .left ? 0 : .pi
-        return swipe.outputImage
+        // «Скольжение»: следующий слайд въезжает с края ПОВЕРХ статичного
+        // предыдущего. Раньше использовался CISwipeTransition со `width = 0`:
+        // его геометрия вырождалась, зависела от разрешения холста, и в
+        // экспортированном фильме эффект заканчивался примерно за 20% времени
+        // перехода. Явная трансляция детерминирована и не зависит от размера
+        // холста.
+        let canvasRect = from.extent
+        guard canvasRect.width > 0 else { return nil }
+        let clamped = CGFloat(min(max(t, 0), 1))
+        let width = canvasRect.width
+        // «Влево» — новый слайд едет справа налево (+width -> 0),
+        // «вправо» — слева направо (-width -> 0).
+        let startX = direction == .left ? width : -width
+        let offset = startX * (1 - clamped)
+        let incoming = to.transformed(by: CGAffineTransform(translationX: offset, y: 0))
+        return incoming.composited(over: from).cropped(to: canvasRect)
     }
 
     private static func push(from: CIImage, to: CIImage, t: Double, direction: SlideDirection) -> CIImage? {
